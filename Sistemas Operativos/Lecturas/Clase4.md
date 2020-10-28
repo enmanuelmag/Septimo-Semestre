@@ -85,7 +85,7 @@ El flujo de llamadas de ``do_fork`` es:
 - copiar memoria del proceso ``copy_mm``
 - finalemne copiar el hilo ``copy_thread``
 
-Finalmente el proceso existe pero no se esta ejecutando, la fucnion ```do_fork`` llama despues a ``wake_up_new_task`` es la que lo inicaliza
+Finalmente el proceso existe pero no se esta ejecutando, la fucnion ``do_fork`` llama despues a ``wake_up_new_task`` es la que lo inicaliza
 
 ## Finalizacion de procesos
 Jerarqui de la funciones para matar procesos
@@ -93,7 +93,11 @@ Jerarqui de la funciones para matar procesos
 
 ``do_exit`` elimina todas la referencias al proceso actual del sistema operativo. El flujo es el siguiente:
 - cambia la bandera PF_EXITING
-- se llama a exit_mm, para librarlo de la memoria utilizada
+- se llama a ``exit_mm``, para librarlo de la memoria utilizada
 - se lo libera de claves de seguridad y procesos por hilos con ``exit_keys``
 - se notifica al padre que el hijo está saleindo con `aexit_notify`
 - por ultimo, se cambia el estado a PF_DEAD
+
+Intermanete es el CPU que lanza la interupcion del time_slice apra quitar el proceso del cpu?
+
+el agendar no quita proceso? es solo selecciona cual entra verdad?
