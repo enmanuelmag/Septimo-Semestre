@@ -1,2 +1,11 @@
 *.pdf
 *.docx
+*.cmd
+*.odt
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.symvers
+*.order
+*.o
