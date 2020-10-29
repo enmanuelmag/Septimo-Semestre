@@ -157,28 +157,37 @@ EL SO normalemne prevee que un proceso acceda a la informacion de otro proceso, 
 
 ## Mensajes
 
+Usa la memoria del kernel, para enviar info. (No siempre es con el kernel)
+
 Tipos:
 
-- Naming: bajo comunicaicon directa, los procesos solo pueden:
+- Naming: bajo comunicaicon directa, los procesos solo pueden: //Ej: sockets
   - tener un link esablecido automicamente entre cada par de procesos
   - un link es asocidado con solo DOS procesos
   - entre cada par de procesos solo existe un link
 
 Se puede tener simetrica o asimetrica. La desventaja es la modularidad, cambios de el identificador of algunos de los procesos pueda que necesite examinar todos las otras definiciones de procesos. Todas las otras referencias de los antiguos identificadores seen ser encontradas. En general cualquier hard-coding tencia donde los identificadores deben que explicitos no son deseables
 
-- Mailbox, con comunication indirecta. variso procesos pueden compartir un solo mailbox. pero quien recibe depende de el esquema escogido:
+- Mailbox (puertos sualemtne son buffers en memoeria o discos duros), con comunication indirecta. variso procesos pueden compartir un solo mailbox. pero quien recibe depende de el esquema escogido:
   - un link permite estar asociedo con dos procesos a lo mucho
   - permite que un proceso ejecute recieve operation
   - permite que el system arbitrariamente escoga el procesoq ue resiva
-  
-El sistema permite crear nuevo amilbox, enviar y recibir a travez del mailboxy eliminar mailbox
+
+Es indirecta porque es el mailbox donde se depositan los datos pero los procesos no lo ven hasta que se hace su ejecucion. Tal como un correo (emial)
+El sistema permite crear nuevo mailbox, enviar y recibir a travez del mailboxy eliminar mailbox
 
 ### Sincronizacion
 
 El paso de mensajes se puede hacer bloqueando o no bloqueante
 
+- bloqueante al enviar: el enviador se bloquea hasta que el mensaje es leido
+- bloqueate al recibir: el recibidor se bloquea hasta que haya algun mensaje para leer
+
+- no bloqueante al enviar: el enviador envia y continua
+- no bloqueante al recibir: lee lo que haya en el canal de comunucacion lleno o vacio y continua
+
 ### Buffering
-- zero caapcidad: la lista no puede tener mensajes en cola
+- zero capcidad: la lista no puede tener mensajes en cola
 - limitada: un numero lmite de mensajes
 - ilimitada: sin limite de mensjaes
 
@@ -186,14 +195,14 @@ El paso de mensajes se puede hacer bloqueando o no bloqueante
 
 ### Memoria compartida
 
-La memoria comaprtida se añade al espacio de direccione de memoria dle proceso, si los procesos no son adbyecntes a la moeria comaprtida, como se añade? queda como un salto?
+La memoria comaprtida se añade al espacio de direccione de memoria dle proceso o en algun otro lado, si los procesos no son adbyecntes a la moeria comaprtida, como se añade? queda como un salto?
 
-(quien libera es memoria comapartida)
+(quien libera es memoria comapartida) Kernel(?)
 
 Para crear un memoria compartida se usa:
 
 ```
-segment id = shmget(IPC PRIVATE, size, S IRUSR | S IWUSR);
+segment id = shmget(IPC PRIVATE, size, S IRUSR | S IWUSR); // (key, SHMSZ, IPC_CREAT | 0666)
 ```
 
 - el primer parametro es IPC_PRIVATE

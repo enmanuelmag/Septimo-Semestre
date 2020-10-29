@@ -8,6 +8,9 @@ Si un programa termina, el so se entera (exit y return), esas son systemcall, el
 
 ### Bloques de memoria comaprtida, que pasa cuando no son procesos adyacentes?
 
+### El de largo plazo carga en memoria principal? la cola de procesos lista es la memoria principal?
+EN EL KERNEL osea ocupa una fraccion en el memoria del computador RAM, UNA COSA POR CADA PROCESADOR. 
+
 ### Kernel
 La memoeria se divivde en dos, los procesos y en otra parte el Kernel. EL vive en otro espcio de memoria, porque las llamadas priviligeadas nunca deben ser accecibles por un proceso. EL no tiene pid, PCB, nada de eso. El codigo de kernel de ejecuta cuando sale una interrupcion, son ejecutadas por el SO.
 
