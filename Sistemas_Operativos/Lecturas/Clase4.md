@@ -28,7 +28,7 @@ struct task_struct {
 
   struct task_struct ∗real_parent;
 
-  char comm[TASK_COMM_LEN];
+  char comm[TASK_COMM_LEN]; //ruta del archivo del proceso
 
   struct thread_struct thread;
 
@@ -89,6 +89,7 @@ Finalmente el proceso existe pero no se esta ejecutando, la fucnion ``do_fork`` 
 
 ## Finalizacion de procesos
 Jerarqui de la funciones para matar procesos
+
 ![](../assets/exit.png)
 
 ``do_exit`` elimina todas la referencias al proceso actual del sistema operativo. El flujo es el siguiente:

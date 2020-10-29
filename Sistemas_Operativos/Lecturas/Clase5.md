@@ -39,7 +39,7 @@ Cuando se itnercambian procesos siemrpe hay un tiempito de preparacion, cpu idle
 
 HILOS
 
-Un programa tiene un solo hilo de ejecucion. Un hilo es algoq ue pertence al proceso, ene l PCB se manipula los hilos
+Un programa tiene un solo hilo de ejecucion. Un hilo es algo que pertence al proceso, ene l PCB se manipula los hilos
 
 ``` 
 struct task_struct {
@@ -93,7 +93,7 @@ Cuando un proceso esta ejecutando una de 3 puede pasar:
 
 ### Schedulers
 
-- long-term scheduler o job shceduler, seleciona procesos del pool y los carga en la memoeria para su ejecucion, menos ejecutado. solo cuando un proceso sale del ssistema, puede dmeorarse mas. Este debe hacer una decision muy cuidadosa. Este debe sleecionar un buen balance de procesos que requieren uso de i/o y de CPU
+- long-term scheduler o job shceduler, seleciona procesos del pool y los carga en la memoria para su ejecucion, menos ejecutado. solo cuando un proceso sale del ssistema, puede dmeorarse mas. Este debe hacer una decision muy cuidadosa. Este debe sleecionar un buen balance de procesos que requieren uso de i/o y de CPU
 - short-term scheduler o CPU shceduler, selecion de los procesos cual era listo para ser ejecutado y le permite el uso del procesador. Este se ejecuta al menos una vez cada 100 milisegundos
 
 Algunso sistemas incluyen un medium-trerm scheduler que se refiere al swapping
