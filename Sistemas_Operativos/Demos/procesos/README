@@ -1,0 +1,3 @@
+To compile the examples execute
+
+gcc -o executable_file_name source_file.c

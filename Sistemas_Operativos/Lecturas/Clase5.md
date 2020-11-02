@@ -4,7 +4,7 @@ El proceso del SO ejecuta codigo dle sistema, mientras que los procesos de usuar
 
 Un procesos es una esepecia de contenedor que nos permite llevar nuestras intrucciones al procesador para que sean ejecutadas.
 
-Un programa solo es un archivo, un proceso se ejecutan de manera secuencial. es un bloque de memoria, se colocan las intrucciones (seccion de texto), program counter o puntero de intruccion (dice que intruccion ejecutar), en el STACK va las temproales, data par alas globales, las dianmicmente  (malloc, alloc, un obj creado) en el HEAP.
+Un programa solo es un archivo, un proceso se ejecutan de manera secuencial. es un bloque de memoria, se colocan las intrucciones (seccion de texto), program counter o puntero de intruccion (dice que intruccion ejecutar), en el STACK va las temproales, data para las globales, las dianmicmente  (malloc, alloc, un obj creado) en el HEAP.
 
 Conforme el proceso se ejecuta el uso de la memoria se va ocupando. El stack crece en direcciones hacia abajo, mientras que el heap crece para arriba.
 
