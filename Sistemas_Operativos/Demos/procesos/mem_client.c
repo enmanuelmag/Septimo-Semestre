@@ -24,11 +24,11 @@
 #include <sys/shm.h>
 #include <stdio.h>
 
-#define SHMSZ 27
+#define SHMSZ     27
 
 int main()
 {
-    int shmid;
+	int shmid;
     key_t key;
     char *shm, *s;
 
@@ -40,19 +40,17 @@ int main()
     /*
      * Locate the segment.
      */
-    if ((shmid = shmget(key, SHMSZ, 0666)) < 0)
-    {
+    if ((shmid = shmget(key, SHMSZ, 0666)) < 0) {
         perror("shmget");
-        return (1);
+        return(1);
     }
 
     /*
      * Now we attach the segment to our data space.
      */
-    if ((shm = shmat(shmid, NULL, 0)) == (char *)-1)
-    {
+    if ((shm = shmat(shmid, NULL, 0)) == (char *) -1) {
         perror("shmat");
-        return (1);
+        return(1);
     }
 
     /*
@@ -68,13 +66,9 @@ int main()
      * segment to '*', indicating we have read 
      * the segment.
      */
-    printf("Altero la memoria\n");
+	printf("Altero la memoria\n");
     *shm = '*';
 
-    /*
-    *
-    &    
-    */
+    return(0);
 
-    return (0);
 }

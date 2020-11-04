@@ -21,28 +21,58 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <stdio.h>
+#include <getopt.h>
 
-#define SHMSZ 21
-#define LENGTH_MSG 20
-
-int main()
+int main(int argc, char *argv[])
 {
+
     int c;
     int shmid;
     key_t key;
     char *shm, *s;
+    int LENGTH_MSG = 20;
+    int SHMSZ = 21;
+
+    int cant;
+    char opcion;
+    char sign = -1;
+    while ((opcion = getopt(argc, argv, "s:")) != -1)
+    {
+
+        switch (opcion)
+        {
+        case 's':
+            sign = atoi(optarg);
+            break;
+        default:
+            printf("%s", "Ingrse el parametro s con un número a usar como firma en sus mensajes\n");
+            break;
+        }
+    }
+
+    if (sign < 0)
+    {
+        printf("%s", "No se admiten valores negativos para el parámetro s\n");
+        return -1;
+    }
 
     /*
      * We'll name our shared memory segment "5678".
      */
-    key = 5678;
+    key = 5679;
 
     /*
      * Create the segment.
      */
-    if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0)
+    if ((shmid = shmget(key, SHMSZ, 0666)) < 0)
     {
-        perror("shmget");
+
+        if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0)
+        {
+            perror("shmget-create");
+            return (1);
+        }
+        perror("shmget-locate");
         return (1);
     }
 
@@ -55,38 +85,29 @@ int main()
         return (1);
     }
 
-    char sign = '1';
-
     while (1)
     {
         char input[LENGTH_MSG];
         printf("%s", "Ingrese su mensaje:");
-        scanf("%s", input);
-        int c;
+        /* scanf(" %[^\t\n]s", input); */
+        fgets(input, LENGTH_MSG, stdin);
 
+        /* printf("%s %s", "El mensaje:", input); */
+        s = shm;
         *s++ = sign;
-
-        for (c = 0; c <= LENGTH_MSG; c++)
+        for (int c = 0; c < LENGTH_MSG; c++)
         {
-
             *s++ = input[c];
         }
 
-        s -= (SHMSZ);
-        while (*s != '1')
+        s = shm;
+        while (*s == sign)
         {
-            printf("%s", "Esperando...");
-            sleep(1);
         }
 
         s++;
-
-        for (int i = 0; i < LENGTH_MSG; i++)
-        {
-            printf("%s", s++);
-        }
-
-        s -= (SHMSZ);
+        printf("%s", s++);
+        s = shm;
     }
 
     return (0);

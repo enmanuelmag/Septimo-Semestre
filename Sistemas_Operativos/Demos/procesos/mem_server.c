@@ -22,12 +22,11 @@
 #include <sys/shm.h>
 #include <stdio.h>
 
-#define SHMSZ 21
-#define LENGTH_MSG 20
+#define SHMSZ     27
 
 int main()
 {
-    int c;
+	char c;
     int shmid;
     key_t key;
     char *shm, *s;
@@ -40,47 +39,43 @@ int main()
     /*
      * Create the segment.
      */
-    if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0)
-    {
+    if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0) {
         perror("shmget");
-        return (1);
+        return(1);
     }
 
     /*
      * Now we attach the segment to our data space.
      */
-    if ((shm = shmat(shmid, NULL, 0)) == (char *)-1)
-    {
+    if ((shm = shmat(shmid, NULL, 0)) == (char *) -1) {
         perror("shmat");
-        return (1);
+        return(1);
     }
 
-    char sign = '1';
+    /*
+     * Now put some things into the memory for the
+     * other process to read.
+     */
+    s = shm;
 
-    while (1)
-    {
-        char input[LENGTH_MSG];
-        scanf("%s", input);
-        int c;
+    for (c = 'a'; c <= 'z'; c++)
+        *s++ = c;
+    *s = NULL;
 
-        *s++ = sign;
+    /*
+     * Finally, we wait until the other process 
+     * changes the first character of our memory
+     * to '*', indicating that it has read what 
+     * we put there.
+     */
+    while (*shm != '*')
+        sleep(1);
+   
+    printf("el client leyo la memoria\n");
+    for (s = shm; *s != NULL; s++)
+	        putchar(*s);
+    putchar('\n');
 
-        for (c = 0; c <= LENGTH_MSG; c++)
-            *s++ = input[c];
+    return(0);
 
-        s -= (SHMSZ + 1);
-        while (*s != '1')
-        {
-            sleep(1);
-        }
-
-        s++;
-
-        for (int i = 0; i < LENGTH_MSG; i++)
-        {
-            printf("%s", s++);
-        }
-    }
-
-    return (0);
 }
