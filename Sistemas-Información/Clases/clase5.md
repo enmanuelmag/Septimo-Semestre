@@ -42,7 +42,8 @@ conjunto de rececptr/trnamisor lanzado por un cohete y colcoado en orbita alrede
 - noralmente tinee 32 transpondders con capacidad de 100 mbits por un segundo
 - la cobertura de la tierra aumenta con la altura
 - desviacion: atraccion lunar, choques, se corrigue meidnate pulsaciones
-  
+
+trilateracion mas de un stelite apra ubicar. 24 gps estan en usopara ubicar
 ### VPN
 seguridad, tunel
 
@@ -103,7 +104,7 @@ Computador de mano
 - Computadoras ultradelgadas que consisten en un tablero de circuitods con proceadores, memoria y conexiones de red que se almacena en estantes
 - Ocupan menos espacio que los servidores tradicionales en gabinete
 
-Nercarfe desarolló la redes de compu con cables coaxiales, luego con cable cobre. El hablaba sobre el valor de la red: Este valor potenical va aincremntando de manera exponencial, mientras mas miembros en la red, mas valor tiene la red
+MNetcalfe desarolló la redes de compu con cables coaxiales, luego con cable cobre. El hablaba sobre el valor de la red: Este valor potenical va aincremntando de manera exponencial, mientras mas miembros en la red, mas valor tiene la red
 
 ## Computacion GRID
 Se refiere conetar muchas computadoras y tenerlas como un solo computador
@@ -130,3 +131,22 @@ se encarga de administrar los recuross del computador. incluye controladores de 
 - firmware: controla el func y el rendimieto de lso quipos
 - sistema operativo: interactua con el hardware y disp internos
 - software de utilidad: regula la funcionalidad del equipo meidante el analsis de su rendimiento, configuracion y optmizacion de procesos
+
+## Aqr de sistema
+es la estrutura o estruutas del sistema, comrende componetes, propiedades externas de esos componetes y la interaccion entre ellas
+
+- Elmentos computaciones: entidad tales como clientes, servidores, bases de datos, filtros, capas de iuin sistema jerarquico
+- interraciones: ocurren entre los elementos a nivel de diseño
+
+Componentes:
+1. Aqr de informacion: los datos, como se esquematizan, a traves de una db, como se relacion de un dep a otro. que logica tienen
+2. aqr de negocio: procesos de negocios, generalmente aqui se describe terminos capacidades y tecnologia de soporte, reles actores y evnetos que prseta la orgniaacion, encamindaos a la mision y vision. procesos generadores de valor
+3. aqr aplicacionales: se describen todos los sistemas de informacion, usados en el negocio, se ayuda a la automatizacion de procesos
+4. arq tecnologica: las redes que se manejan, servicios de red, cual es la configuracion, como maneja el centro de almacenamiento. cual es el metodo de ocntrato con internet
+
+Atrbutos de calidad de un sistema
+- ejeccion: desemppese, seg, disponifi, funcionabilidad, usabibildad
+- modificable, portabilidad, reusabilidad, integrabilidad, evaluabilidad
+- negocio: time-to-market, costo, tiempo de vida pryectado, mercado atacado, planificacion, uso extensivo de los legacy systems
+- aquitectura: integridad conceptural, correctitud, completitud. facil de construir.
+
