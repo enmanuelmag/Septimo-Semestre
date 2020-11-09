@@ -76,8 +76,6 @@ int main(int argc, char *argv[])
         int pid = fork();
         if (pid == 0)
         {
-            double * p = (double *) calloc(5, sizeof(double));
-            free(p);
             gettimeofday(&child_time, NULL);
             dup2(fds[1], 1); 
             printf("%f", transform(child_time));
