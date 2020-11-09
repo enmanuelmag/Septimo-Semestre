@@ -40,7 +40,7 @@ int main()
 
             if (pid == 0)
             {
-                close(1);    //close the stdout
+                
                 dup2(fds[1], 1); // redirect standard output to the pipe table;
                 if (strstr(ch, " ") != NULL)
                 {
@@ -91,7 +91,7 @@ int main()
             else
             {
                 int stdin_copy = dup(0);
-                close(0);    //close stdin
+                
                 dup2(fds[0], 0); // redirect standard input to the pipe table
                 int status;
                 waitpid(pid, &status, 0);
@@ -100,6 +100,7 @@ int main()
                 printf("%s", buff_p);
                 close(fds[0]);
                 close(fds[1]); //closed unused fids
+                free(buff_p);
                 dup2(stdin_copy, 0);
             }
         }
