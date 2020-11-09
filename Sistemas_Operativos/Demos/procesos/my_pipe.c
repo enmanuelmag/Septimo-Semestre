@@ -29,17 +29,20 @@ int main()
     if (fork() == 0) { //reads
 		close(0); //close stdin
 		dup(fds[0]);  // redirect standard input to the pipe table
-		close(fds[0]); close(fds[1]); //closed unused fids
+		
 		argv[0] ="/bin/more";argv[1] = 0;
 		execv(argv[0], argv);
+		close(fds[0]);
+		close(fds[1]); //closed unused fids
 		exit(0);
 	} else { //writes
        close(1); //close the stdout
 	   dup(fds[1]);          // redirect standard output to the pipe table;
-       close(fds[0]); close(fds[1]); //closed unused fids
+       
 	   argv[0] = "/bin/ps"; argv[1] =  0;
        execv(argv[0], argv);
-	   
-       exit(0);
+	   close(fds[0]);
+	   close(fds[1]); //closed unused fids
+	   exit(0);
     }
 }

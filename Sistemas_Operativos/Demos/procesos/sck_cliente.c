@@ -28,8 +28,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 
+#define len_buff 1000
 ///   CLIENT   
 
 
@@ -44,7 +47,7 @@ int main(int argc, char *argv[])
 	char ch = 'A';
 
    //Create socket for client.
-	sockfd = socket(PF_INET, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd == -1) { 
 		perror("Socket create failed.\n") ; 
 		return -1 ; 
@@ -52,7 +55,8 @@ int main(int argc, char *argv[])
 	
 	//Name the socket as agreed with server.
 	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = inet_addr("127.0.0.1");
+	// direccion donde esta ubicado el servidor
+	address.sin_addr.s_addr = inet_addr("186.3.245.44");
 	address.sin_port = htons(7734);
 	len = sizeof(address);
 
@@ -63,14 +67,27 @@ int main(int argc, char *argv[])
 		exit(-1);
 	}
 
-	while ( ch < 'Y') {
+	char *path_dst = argv[1];
+	printf("%s\n", path_dst);
 
-		//Read and write via sockfd
-		rc = write(sockfd, &ch, 1);
-		if (rc == -1) break ; 
-		read(sockfd, &ch, 1);
-		printf("Char from server = %c\n", ch);		
-	} 
+	int destino = open(path_dst, O_RDONLY | O_WRONLY | O_TRUNC | O_APPEND | O_CREAT, "666");
+	if (destino == -1)
+	{
+		perror("Error en el open del archivo destino");
+		exit(0);
+	}
+
+	char *buff = (char *)calloc(len_buff, sizeof(char));
+	int total = 0;
+	int numByt;
+	while ((numByt = read(sockfd, buff, len_buff)) != 0)
+	{
+		total += numByt;
+		write(destino, buff, numByt);
+		free(buff);
+		buff = (char *)calloc(len_buff, sizeof(char));
+	}
+
 	close(sockfd);
 
 	exit(0);
