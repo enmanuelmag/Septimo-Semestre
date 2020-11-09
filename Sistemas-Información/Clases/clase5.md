@@ -1,4 +1,8 @@
 # Tecnologias de la informacion
+- software
+- hardware
+- comunicacion (how work)
+- data
 
 ## Comunicacion de los datos
 - emisor: inica las comunicaciones
@@ -7,9 +11,9 @@
 - receptor: recibe la info
 - contenido: es la información transferida
 
-## Fomar de conexion
+## Formas de conexion
 - punto a punto
-- punto a multipunto: conectar a las computadoras. 
+- punto a multipunto: conectar a las computadoras
   
 ## Tipos de redes
 Se expaen grandes distancias, modem acronimo para modulacion y demodualacion:
@@ -98,3 +102,31 @@ Computador de mano
 ## Servidores Blade
 - Computadoras ultradelgadas que consisten en un tablero de circuitods con proceadores, memoria y conexiones de red que se almacena en estantes
 - Ocupan menos espacio que los servidores tradicionales en gabinete
+
+Nercarfe desarolló la redes de compu con cables coaxiales, luego con cable cobre. El hablaba sobre el valor de la red: Este valor potenical va aincremntando de manera exponencial, mientras mas miembros en la red, mas valor tiene la red
+
+## Computacion GRID
+Se refiere conetar muchas computadoras y tenerlas como un solo computador
+
+Orgnizacion de las computadoras
+
+![](./../assets/grafico-compus.png)
+
+Relacion del costo y potencia de las computadoras
+![](./../assets/costos-pot.png)
+
+### Ley de Moore
+
+Se duplica el num de trnasitores o reduce el precio.
+
+## Ley del alamacenamiento masivo
+
+Ley de almacenamiento digital masico e sun seungo impulsor de la tecnologia de la intraestrucutra de TI.
+
+## SO
+se encarga de administrar los recuross del computador. incluye controladores de dispositovos, servidores, sistemas de ventanas y programas de utilidades. Permite coordiar todos los dispositovos externos de la computaodra como impresora, mouse, teclado, monitor, etc.
+
+- sistema de entrada salida baisco: BIOS
+- firmware: controla el func y el rendimieto de lso quipos
+- sistema operativo: interactua con el hardware y disp internos
+- software de utilidad: regula la funcionalidad del equipo meidante el analsis de su rendimiento, configuracion y optmizacion de procesos
