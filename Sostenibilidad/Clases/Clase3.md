@@ -26,3 +26,7 @@ El cambio ocurre a lo largo del tiempo en las caracteristicas de las poblaciones
 ## Amenazas biodiversidad
 
 - destruccion de habbitas
+- sobreexplotacion de recuross
+- especies invasoras
+- contaminacion
+- calentamiento global
