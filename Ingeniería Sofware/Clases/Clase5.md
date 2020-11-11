@@ -76,7 +76,7 @@ Recomendaciones generales
 - protoipos: plotea un requerimiento en un prototipo
 - casos de prueba: pruebas para verificar el req
 
-## Criterios de validacion
+## Criterios de validacion o aceptación
 
 Define como el cleitne chequeara que los requerimientos ha sido satisfechos:
 1. aprobacion de un experto
