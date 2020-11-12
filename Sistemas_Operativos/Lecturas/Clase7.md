@@ -36,8 +36,15 @@ Mapea muchos hilos de nivel usuario a menos o igual cantidad de hilos kernel. La
 ## Librerias de Hilos
 Nos permiten crear y adminsitrar hilos, es una API. Hay dos maneras proveer una libreria entramente que esiste en el user sapce, invocar una funcion reuslta en una funcion local en el user space y no llamda al sistema. EL otro enfoque es crear una kernel-level library,  el codigo y estrutura de datos para la libreria resultan en una llamada al sistema al kernel. POSIX puede ser provida como user o kernel library. Win32 es una librerua de kenrel, The Java thread permite hilos creado y admintrados directamente en programas de Java, Sin embargo, java como es una maquina virtual, depende del SO. Si esta en windows es una libreria de kernel usando Win32, pero si esta en Linux usa Pthread
 
-## Problemas hilos
+## OMP
+Macro para crear hilos
 
+# Grand Central Dispatch
+^{} mete en las colas trozos de codigo. todos compiten por ejecutarse. pero mi codigo rpinciapl sigue de largo
+
+![](../assets/colas.png)
+
+## Threading Issues
 Si un hilo llama a fork(), dpendiendo dle SO, puede duplicar todos los hilos o solo duplica el hilo que incoo a fork().
 
 Si un hilo llama a exec(), el programa invocado en exec() reemplazara todo el proceso actual incluyendo todos los hilos. Si exec() es llamda inmediatameente despyes de fork(), entonces la duplicancion de hilos es incesaria, el programa reemplzara todo. Pero si no llama a exec() despues d efork(), el procesos separado debera duplicar todos los hilos.
@@ -45,7 +52,9 @@ Si un hilo llama a exec(), el programa invocado en exec() reemplazara todo el pr
 ## Cacelacion
 
 - asyncona: un hilo inmediatame termina a un hilo en especificop
-- deferred: el hilo objetivo chequea periodiacamente si deberia terminal, si es el caso el mismo se mata, F
+- deferred: el hilo objetivo chequea periodiacamente si deberia terminal, si es el caso el mismo se mata, F. COn pthread_kill o kill? el hilo seguira su ejecucion hasta llegar el pthread_testcancel. esto cuando los hilos trabajan en datos compartidos entre ellos
+
+pthread_kill es una señal que el hilo la recibe, se configura el tipo de cancelacion en los atributos cuando se crea el hilo.
 
 El problema viene cuando un hilo esta actualizando data comparitda, el SO reclama lso recuross pero aveces no todo. entocnes una canclacion asincrona no neceariamente libera todos los recursos. Mientas que la deferred el hilo puede calcear de manera segura.
 
@@ -63,4 +72,28 @@ En programas de un solo hilo las señales son enviadas a ese proceos con ese hil
 - se asigna un hilo especifco para recibir todas las señales
 
 Si es una señal sincrona, esta necesta ser entregada al hilo que la causo, pero esto cambia cuando es asincrona como Ctrl+C. por lo tanto en algunao casos es entrafa a los hilos que no la estan bloqueando, peroc omo se debe manejar una vez, se la entrega al primer hilo que no la bloquee.
+
+## Thread-Local Storage
+permite tener bloques de memoria aun cuando el hilo termina.
+
+## LWP
+
+Lightwieght proicess, por cada lwp se tiene un hilo de kernel. Entonces todo se reduce como se mapea los hilos de usuario al hilos del kernel a traves del lwp
+
+> Nº Hilos usuarios >  Nº LWP
+
+CADA HILO TINEE ID, REGISTRO SET, SEPARATE USER AND KENEL STACKS
+
+Windows
+- ETHREAD contiene un puntero al proceso padre,
+- KTHREAD planificacion sincroniczaicon de kernel
+- TEB tiene inofmracion de stack user mode
+
+![](../assets/wt.png)
+
+## Linux Threads
+Para linux todos son tareas
+Se usa clone() para decirle que creer una tarea que vive en el espacio de memoria
+
+![](../assets/clone.png)
 
