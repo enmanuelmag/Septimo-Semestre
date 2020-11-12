@@ -99,8 +99,8 @@ int main(int argc, char *argv[])
         }
     }
     double prom = acum_time / num_proc;
-    
-    printf("EL tiempo promedio de los procesos hijos fue: %f\n", prom * 1000000.0f);
+
+    printf("EL tiempo promedio de los procesos hijos fue: %f\n", prom * 1000.0f);
 
     double *times = calloc(num_proc, sizeof(double));
     pthread_t *tids = calloc(num_proc, sizeof(pthread_t));
@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
 
     prom = acum / num_proc;
     
-    printf("El tiempo promedio de los hilos fue: %f\n", (prom * 1000000.0f));
+    printf("El tiempo promedio de los hilos fue: %f\n", (prom * 1000.0f));
 
     return 0;
 }

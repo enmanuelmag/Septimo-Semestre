@@ -25,6 +25,9 @@ int main()
     char *argv[3];
     printf("$ ");
 
+    pipe(fds);
+    close(fds[1]);
+
     while (((fgets(ch, buff, stdin)) != NULL))
     {
 
@@ -36,11 +39,12 @@ int main()
             {
                 exit(0);
             }
+
             int pid = fork();
 
             if (pid == 0)
             {
-                
+
                 dup2(fds[1], 1); // redirect standard output to the pipe table;
                 if (strstr(ch, " ") != NULL)
                 {
@@ -82,29 +86,28 @@ int main()
                 {
                     execlp(ruta, ruta, (void *)0);
                     printf("%s: el no fue encontrado\n", ruta);
-                    
                 }
                 close(fds[0]);
-                close(fds[1]); //closed unused fids
+                close(fds[1]);
                 return 0;
             }
             else
             {
                 int stdin_copy = dup(0);
-                
-                dup2(fds[0], 0); // redirect standard input to the pipe table
+
+                dup2(fds[0], 0); 
                 int status;
                 waitpid(pid, &status, 0);
                 char *buff_p = (char *)calloc(len_buff, sizeof(char));
                 read(fds[0], buff_p, len_buff);
                 printf("%s", buff_p);
-                close(fds[0]);
-                close(fds[1]); //closed unused fids
+                
                 free(buff_p);
                 dup2(stdin_copy, 0);
             }
         }
         printf("$ ");
     }
+    close(fds[0]);
     return 0;
 }
