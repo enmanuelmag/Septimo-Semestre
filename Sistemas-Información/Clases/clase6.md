@@ -38,7 +38,7 @@ Adema   s de los criterios anteriores, considere el costo total de propiedad de 
 
 ## Administracion de activos
 
-### IMpacto de la era digital
+### Impacto de la era digital
 - proliferacion de quipos de computacion en la organziacion
 - movilidad de los quipos y componetes
 - corto ciclo de vida de lso quipos
@@ -73,12 +73,12 @@ Centralizado:
 - daño en el equipo detiene todo
 - tiempo de repsuesta no e el mejor
 
-Distrivuido:
+Distribuido:
 - mayor flexibilidad
 - oportunidad de un mejor tiempo de respeusta
 - requiere personal especializado
 
-## COmputacion en la nube
+## Computacion en la nube
 
 - autoservicio bajo demanda
 - acceso ubicuo a la red
@@ -110,3 +110,15 @@ usa el software que el distribuido aloja en su hardware y ofrece a trves de inte
 mucho es mejor beneficio un servicio a tneer un servidor fisico y darle todos los mantenimientos y demas requsisitos para su funcionamiento.
 
 ## Internet de las cosas (IoT)
+- Sensores
+- Conectividad
+- Dara Processing
+- User interface
+
+Ejemplos:
+- casa inteligentes
+- brazaletes intelignetes
+- transporte intelignete
+- casas inteligentes
+
+Mientras que IoT tiene que ver con electrodomesticos, entretenimeinto automoviles, y otros muchos elementos de la vida cotidiana,Indistria 4.0 o IIoT se refiere a fabricas, maquinarias, instalaciones de produccion o redes de sensores
