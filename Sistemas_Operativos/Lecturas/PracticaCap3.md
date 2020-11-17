@@ -21,3 +21,5 @@ A:
 | Fixed msg  | Se sabe siempre el tamaño y estructura del dato a leer  | No se puede enviar mas tipos de datos, por que pueden cambiar su tamaño / No se puede ennviar datos mas grandes  |
 | Var msg | Permite enviar todo tipo de imgenes  | No se sabe hasta cuando leer |
     
+
+# Hilos
