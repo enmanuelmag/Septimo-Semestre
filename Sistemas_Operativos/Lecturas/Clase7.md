@@ -6,6 +6,8 @@ Puertos
 
 Hay que conocer la direccion y puerto del otro computador, los puertos son identificador que le dice al SO y servidor que espera el cliente
 
+![](../assets/hilos-map.png)
+
 # Hilos
 Son una unidad basica de CPU de utilizacion. Este tiene un Thread ID, program counter, a register set, y un stack. Este comparte con otros hilos, code section, data seection, y otros os recursos como files y señales. Un proceso tradicional tiene un solo hilo de control. Si un procesos tiene mas de un hilo de control puede hacer mas de una tarea al mismo tiempo.
 

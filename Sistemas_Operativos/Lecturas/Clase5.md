@@ -79,7 +79,7 @@ struct task_struct {
 
 Trata de maximizar el uso del CPU, cambiando rapidamente entre procesos.
 
-El process scheduler (componente a veces compoente del kernel), este selecciona cual es el siguiente proceso a ejecutar:
+El process scheduler (compoente del kernel), este selecciona cual es el siguiente proceso a ejecutar:
 - job queue: todos los procesos del sistema
 - ready queue: estan en la memoria principal, listos y esperando para ser ejecutados
 - device queue: procesos que esperan por dispositivos de i/o
