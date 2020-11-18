@@ -114,6 +114,7 @@ Orgnizacion de las computadoras
 ![](./../assets/grafico-compus.png)
 
 Relacion del costo y potencia de las computadoras
+
 ![](./../assets/costos-pot.png)
 
 ### Ley de Moore
