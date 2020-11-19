@@ -78,7 +78,7 @@ Recomendaciones generales
 
 ## Criterios de validacion o aceptación
 
-Define como el cleitne chequeara que los requerimientos ha sido satisfechos:
+Define como el cliente chequeara que los requerimientos ha sido satisfechos:
 1. aprobacion de un experto
 2. una prueba mediable
    - por un periodo definido de tiempo, o
