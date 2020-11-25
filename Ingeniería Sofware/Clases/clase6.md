@@ -142,7 +142,16 @@ Reglas:
 
 ![](../asseets/recorse.png)
 
+### Take away point
 
+- LAS ACTIVADES VAN EN LA FELCHAS
+- los eventos van en los nodos (otros no hemos visto esto)
+- earliest event time y latest event time
+- identifcar unidades y convenciones en los graficos
+- utilizar el menos numeor de activades dummies
+- time-limited vs recourse limite scheduling
+- las reglas de resource-limited scheduling
+- la reduccion del recurso pico
 
 
 ## Ejercicios
