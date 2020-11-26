@@ -46,3 +46,46 @@ Luego de `lock` ahora es 1, la funcion retona el valor original mandado, 0, el p
 Pero la implementar la espera limitada se hace lo sigueitne
 
 ![](../assets/wait_limit.png)
+
+## Semaforos
+
+- `wait()` -> `P()`: preguntar si es menor que N, si es menor que N espera, si es mayor que N lo decrementa y ejecuta la seccion critica
+- `signal()` -> `V()`: incrementa en uno al semaforo
+
+Si el semaforo es 1 entonces es un `mutex`, si no se convierte en un **semaforo contador**
+
+**SIEMPRE DEBE HABER UN `WAIT` Y LUEGO UN `SIGNAL`**
+
+Para evitar el busy waiting se usa:
+- block: para mover un "PCB" a una cola de espera, para suspender procesos y que no usen el CPU, sacar al proceso de READY QUEUE y moverlo a la cola asociada al semaforo
+- wakeup: despertar procesos, quita un proceso de la cola de espera del sem y la pone en la ready queue
+
+![](../assets/sem-queue.png)
+
+## Deadlock y Starvation
+
+### Bunded Buffer
+- n buffers, each hlod one item
+- semafore mutex, inicialziado 1
+- semaforo full, 0
+- semaofot empty inicializado n
+
+![](../assets/sem-b.png)
+
+![](../assets/sem-c.png)
+
+### Readers-Writers Problem
+- data set
+- semaforo rw_mutex, 1
+- semaforo mutex, 1
+- integer read_count, 0
+
+![](../assets/write_sm.png)
+
+![](../assets/read_sem.png)
+
+## Dining-Philosophers Problem
+- bowl of rice, data set
+- semaforo chopstick [5] inicializado en 1
+
+![](../assets/dead-lock.png)
