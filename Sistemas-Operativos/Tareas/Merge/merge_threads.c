@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define buff 200
+#define BUFF 200
 
 //aray global to short
 int *array;
@@ -129,15 +129,15 @@ int main(int argc, char *argv[])
 
     printf("Ingrese los números separados por comas:");
 
-    char ch[buff];
+    char ch[BUFF];
     int exist_array = 0;
-    while (((fgets(ch, buff, stdin)) != NULL))
+    while (((fgets(ch, BUFF, stdin)) != NULL))
     {
         if (strcmp(ch, "\n") != 0 && strlen(ch) != 1)
         {
             char *input = strtok(ch, "\n");
 
-            char ch2[buff];
+            char ch2[BUFF];
             strcpy(ch2, input);
 
             LENGTH_ARRAY = 0;
