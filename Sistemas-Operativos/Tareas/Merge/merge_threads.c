@@ -6,6 +6,14 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+/* 
+INTRUCCIONES
+
+El programa requere del parámetro t que setea la cantidad de hilos para crear
+Luego se mostrará un mensaje por consola para que se ingrese los números de arreglo
+separados por comas
+*/
+
 #define BUFF 200
 
 //aray global to short
