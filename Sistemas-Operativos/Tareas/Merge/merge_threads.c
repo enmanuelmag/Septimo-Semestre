@@ -1,5 +1,7 @@
 #include <time.h>
 #include <stdio.h>
+#define __USE_GNU
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -12,19 +14,28 @@ INTRUCCIONES
 El programa requere del parámetro t que setea la cantidad de hilos para crear
 Luego se mostrará un mensaje por consola para que se ingrese los números de arreglo
 separados por comas
+
+IMPORTANTE
+Este programa setea hilos a cores específicos, se aplica un módulo de 4 para 
+no preveer problemas si se crean mas de 4 hilos. Es decir, un quinto hilo se alojaría
+en el primer core y un sexto hilo en el segundo core.
 */
 
 #define BUFF 200
+//#define _GNU_SOURCE
 
 //aray global to short
 int *array;
 
 typedef struct arg_thread
 {
-    int id;
+    int core_id;
     int ind_left;
     int ind_right;
 } arg_thread;
+
+#define SUCCESS_MSG "Thread %lu setted to CPU %d\n"
+#define FAILURE_MSG "Failed to set thread %lu in CPU %d\n"
 
 void merge(int low, int half, int high)
 {
@@ -93,6 +104,29 @@ void merge_sort(int low, int high)
 void *thread_routine(void *arg)
 {
     arg_thread *info = arg;
+
+    const pthread_t pid = pthread_self();
+    const int core_id = info->core_id;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id % 4, &cpuset);
+
+    const int aff_result = pthread_setaffinity_np(pid, sizeof(cpu_set_t), &cpuset);
+    
+    char *buffer;
+    if (CPU_ISSET(core_id, &cpuset))
+    {   
+        const int space = snprintf(NULL, 0, SUCCESS_MSG, pid, core_id);
+        buffer = malloc(space);
+        snprintf(buffer, space, SUCCESS_MSG, pid, core_id);
+    }else
+    {
+        const size_t space = snprintf(NULL, 0, FAILURE_MSG, pid, core_id);
+        buffer = malloc(space);
+        snprintf(buffer, space, FAILURE_MSG, pid, core_id);
+    }
+    
     int low;
     int high;
 
@@ -108,14 +142,13 @@ void *thread_routine(void *arg)
         merge(low, half, high);
     }
 
-    return 0;
+    return buffer;
 }
 
 int main(int argc, char *argv[])
 {
     char *cp;
     arg_thread *tsk;
-
 
     int LENGTH_ARRAY = 0;
     int NUMBER_THREADS = 4;
@@ -166,7 +199,8 @@ int main(int argc, char *argv[])
             }
             exist_array = 1;
         }
-        if(exist_array){
+        if (exist_array)
+        {
             break;
         }
         printf("Ingrese los números separados por comas:");
@@ -177,7 +211,7 @@ int main(int argc, char *argv[])
     {
         printf(" %d", array[i]);
     }
-    
+
     pthread_t array_threads[NUMBER_THREADS];
     arg_thread arg_list[NUMBER_THREADS];
     int len = LENGTH_ARRAY / NUMBER_THREADS;
@@ -186,24 +220,32 @@ int main(int argc, char *argv[])
     for (int i = 0; i < NUMBER_THREADS; i++, low += len)
     {
         arg_thread *arg_t = &arg_list[i];
-        arg_t->id = i;
+        arg_t->core_id = i;
         arg_t->ind_left = low;
         arg_t->ind_right = low + len - 1;
         if (i == (NUMBER_THREADS - 1))
             arg_t->ind_right = LENGTH_ARRAY - 1;
     }
-   
+
     for (int i = 0; i < NUMBER_THREADS; i++)
     {
         arg_thread *arg_t = &arg_list[i];
         pthread_create(&array_threads[i], NULL, thread_routine, arg_t);
     }
-    
+
+    printf("\n");
     for (int i = 0; i < NUMBER_THREADS; i++)
-    {
-        pthread_join(array_threads[i], NULL);
+    {   
+        void *msg_thread;
+        int result = pthread_join(array_threads[i], &msg_thread);
+        if(result != 0){
+            printf("Error in: pthread_join");
+        }
+        
+        printf("%s\n", (char *)msg_thread);
+        free(msg_thread);
     }
-   
+
     arg_thread *arg_left = &arg_list[0];
     for (int i = 1; i < NUMBER_THREADS; i++)
     {
