@@ -106,11 +106,11 @@ void *thread_routine(void *arg)
     arg_thread *info = arg;
 
     const pthread_t pid = pthread_self();
-    const int core_id = info->core_id;
+    const int core_id = info->core_id % 4;
 
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(core_id % 4, &cpuset);
+    CPU_SET(core_id, &cpuset);
 
     const int aff_result = pthread_setaffinity_np(pid, sizeof(cpu_set_t), &cpuset);
     
