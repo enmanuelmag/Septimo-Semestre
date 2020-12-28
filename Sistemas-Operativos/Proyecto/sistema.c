@@ -39,15 +39,18 @@ int EVENT_3 = 0;
 int EVENT_4 = 0;
 
 int main_id;
-int is_on = 0;
+int is_on = 1;
 int landscape = 0;
 
 int is_gyros1;
 int is_gyros2;
 
+int state_gyros[NUM_GYROS];
+
 sem_t sem_event_1;
 sem_t sem_g1;
 sem_t sem_g2;
+sem_t sem_gs[NUM_GYROS];
 sem_t sem_gas;
 sem_t sem_princ_eng;
 
@@ -55,7 +58,7 @@ int shmid[NUM];
 arg_gyros array_gyros[NUM_GYROS];
 pthread_t array_threads[NUM_THREADS];
 pthread_t array_threads_signals[NUM_THREADS];
-int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarm;
+int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarma;
 
 /* 
  * SINGAL'S HANDLE DEFINITION
@@ -63,7 +66,7 @@ int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarm;
 void handle_cod_101();
 void handle_cod_102();
 void handle_cod_103();
-void handle_event_1(int sig);
+//void handle_event_1(int sig);
 void handle_event_3(int sig);
 void handle_event_4(int sig);
 
@@ -78,6 +81,8 @@ int init_shared_memory(void);
 /*
  * THREAD'S ROUTINES 
  */
+void *signal_gyro_1(void *arg);
+void *signal_gyro_2();
 void *pricipal_engine_thread();
 void *gyroscope_thread(void *arg);
 
@@ -87,39 +92,64 @@ void *gyroscope_thread(void *arg);
 int main(int argc, char *argv[])
 {
     //Semaphore initialization
-    sem_init(&sem_g1, 0, 1);
-    sem_init(&sem_g2, 0, 1);
+    for (int i = 0; i < NUM_GYROS; i++)
+    {
+        sem_init(&(sem_gs[i]), 0, 1);
+    }
+    //sem_init(&sem_g1, 0, 1);
+    //sem_init(&sem_g2, 0, 1);
     sem_init(&sem_gas, 0, 1);
     sem_init(&sem_event_1, 0, 1);
     sem_init(&sem_princ_eng, 0, 1);
 
     if (init_shared_memory() == -1)
-        exit(-1);
+    {
+        printf("Error en init memory\n");
+    }
 
-    main_id = pthread_self();
+    printf("Iniciando...\n");
+    //main_id = pthread_self();
 
-    for (int i = 0; i < NUM_THREADS - 1; i++)
+    for (int i = 0; i < NUM_GYROS; i++)
     {
         arg_gyros *arg = &array_gyros[i];
-        if (i)
+        arg->id = i + 1;
+        arg->men_gyro = param[i + 2];
+        arg->sem_gyro = sem_gs[i];
+        state_gyros[i] = 0;
+        arg->on_gyro = &(state_gyros[i]);
+
+        int res, err;
+        pthread_attr_t attr;
+        res = pthread_attr_init(&attr);
+        if (res != 0)
         {
-            arg->men_gyro = param[2];
-            arg->on_gyro = &is_gyros1;
-            arg->sem_gyro = sem_g1;
+            perror("Attribute init failed");
+            exit(EXIT_FAILURE);
         }
-        else
+        res = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        if (res != 0)
         {
-            arg->men_gyro = param[3];
-            arg->on_gyro = &is_gyros2;
-            arg->sem_gyro = sem_g2;
+            perror("Setting detached state failed");
+            exit(EXIT_FAILURE);
         }
-        pthread_create(&array_threads[i], NULL, gyroscope_thread, arg);
+        res = pthread_create(&array_threads_signals[0], &attr, signal_gyro_1, arg);
+        if (res != 0)
+        {
+            perror("Creation of thread failed");
+            exit(EXIT_FAILURE);
+        }
     }
+
+    //pthread_create(&array_threads_signals[0], NULL, signal_gyro_1, NULL);
+    //pthread_create(&array_threads_signals[1], NULL, signal_gyro_2, NULL);
 
     pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
 
     while (is_on && !landscape)
     {
+        sleep(1);
+        //printf("Analizando...\n");
         if (EVENT_3)
         {
             go_up_30m();
@@ -162,7 +192,7 @@ void go_up_explode()
         EVENT_4 = 0;
         for (int i = 0; i < NUM_THREADS; i++)
         {
-            pthread_kill(array_threads[i], NULL);
+            //pthread_kill(array_threads[i], NULL);
         }
     }
     sem_post(&sem_gas);
@@ -190,7 +220,7 @@ int init_shared_memory(void)
     gasoline = param[1];
     gyros1 = param[2];
     gyros2 = param[3];
-    alarm = param[4];
+    alarma = param[4];
 
     return (1);
 }
@@ -198,12 +228,13 @@ int init_shared_memory(void)
 void *gyroscope_thread(void *arg)
 {
     arg_gyros *info = arg;
-
+    printf("Nació hilo de correcniones giroscopio Nº %d\n", info->id);
     sem_t sem_gyro = info->sem_gyro;
     int *dir_gyros = info->men_gyro;
     int *on_gyro = info->on_gyro;
     while (is_on)
     {
+        printf("Valor a corregir %d\n", *dir_gyros);
         sem_wait(&sem_event_1);
         sem_wait(&sem_gyro);
         if (*dir_gyros)
@@ -220,20 +251,36 @@ void *gyroscope_thread(void *arg)
             {
                 *dir_gyros += 0.5;
             }
+            sem_post(&sem_gyro);
+            sem_post(&sem_event_1);
+            sleep(1);
         }
         else
         {
-            if(info->id == 1){
-                pthread_create(&array_threads_signals[0], NULL, signal_gyro_1, NULL);
-            } else {
-                pthread_create(&array_threads_signals[1], NULL, signal_gyro_2, NULL);
-            }
-            pthread_cancel(pthread_self());
-        }
+            sem_post(&sem_gyro);
+            sem_post(&sem_event_1);
+            sleep(1);
 
-        sem_post(&sem_gyro);
-        sem_post(&sem_event_1);
-        sleep(1);
+            int res, err;
+            pthread_attr_t attr;
+            res = pthread_attr_init(&attr);
+            if (res != 0)
+            {
+                perror("Attribute init failed");
+                exit(EXIT_FAILURE);
+            }
+            res = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+            if (res != 0)
+            {
+                perror("Setting detached state failed");
+                exit(EXIT_FAILURE);
+            }
+            pthread_create(&array_threads_signals[0], &attr, signal_gyro_1, arg);
+            
+            pthread_attr_destroy(&attr);
+            //pthread_cancel(pthread_self());
+            break;
+        }
     }
 }
 
@@ -261,20 +308,47 @@ void *pricipal_engine_thread()
     }
 }
 
-void *signal_gyro_1()
+void *signal_gyro_1(void *arg)
 {
+    
+    arg_gyros *info = arg;
+    printf("Nacio hilo del signal Nº %d\n", info->id);
     while (1)
     {
-        if (*gyros1)
+
+        if (*(info->men_gyro))
         {
-            arg_gyros *arg = &array_gyros[0];
+            printf("Valor del giro %d\n", *(info->men_gyro));
+            /* arg_gyros *arg = &array_gyros[0];
             arg->id = 1;
             arg->men_gyro = param[2];
             arg->on_gyro = &is_gyros1;
-            arg->sem_gyro = sem_g1;
+            arg->sem_gyro = sem_g1; */
+            int res, err;
+            pthread_attr_t attr;
+            res = pthread_attr_init(&attr);
+            if (res != 0)
+            {
+                perror("Attribute init failed");
+                exit(EXIT_FAILURE);
+            }
+            res = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+            if (res != 0)
+            {
+                perror("Setting detached state failed");
+                exit(EXIT_FAILURE);
+            }
 
-            pthread_create(&array_threads[0], NULL, gyroscope_thread, arg);
-            pthread_cancel(pthread_self());
+            res = pthread_create(&array_threads[0], &attr, gyroscope_thread, arg);
+            if (res != 0)
+            {
+                perror("Creation of thread failed");
+                exit(EXIT_FAILURE);
+            }
+            pthread_attr_destroy(&attr);
+            //pthread_kill(pthread_self(), SIGINT);
+            //pthread_cancel(pthread_self());
+            break;
         }
     }
 }
@@ -286,7 +360,7 @@ void *signal_gyro_2()
         if (*gyros2)
         {
             arg_gyros *arg = &array_gyros[1];
-
+            arg->id = 2;
             arg->men_gyro = param[3];
             arg->on_gyro = &is_gyros2;
             arg->sem_gyro = sem_g2;
