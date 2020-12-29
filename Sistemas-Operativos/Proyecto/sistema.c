@@ -34,9 +34,6 @@ typedef struct arg_gyros
 /*
  * GLOBAL VARIABLES 
  */
-int EVENT_1 = 0;
-int EVENT_3 = 0;
-int EVENT_4 = 0;
 int INTERVAL = 1;
 
 pthread_t main_id;
@@ -45,8 +42,6 @@ int landscape = 0;
 int state_gyros[NUM_GYROS];
 
 sem_t sem_gas;
-sem_t sem_event_1;
-sem_t sem_princ_eng;
 sem_t sem_gs[NUM_GYROS];
 
 int shmid[NUM];
@@ -65,7 +60,6 @@ void handle_cod_103();
 /*
  * USER'S FUNCTIONS DEFINITION
  */
-void throw_signals();
 void terminate_event_1();
 void terminate_event_3();
 void create_signals_gyros();
@@ -92,8 +86,6 @@ int main(int argc, char *argv[])
         sem_init(&(sem_gs[i]), 0, 1);
     }
     sem_init(&sem_gas, 0, 1);
-    sem_init(&sem_event_1, 0, 1);
-    sem_init(&sem_princ_eng, 0, 1);
 
     main_id = pthread_self();
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
@@ -198,7 +190,6 @@ void *gyroscope_thread(void *arg)
     {
         pthread_testcancel();
 
-        sem_wait(&sem_event_1);
         sem_wait(&sem_gyro);
         if (*dir_gyros)
         {
@@ -215,13 +206,11 @@ void *gyroscope_thread(void *arg)
                 *dir_gyros += 0.5;
             }
             sem_post(&sem_gyro);
-            sem_post(&sem_event_1);
             sleep(INTERVAL);
         }
         else
         {
             sem_post(&sem_gyro);
-            sem_post(&sem_event_1);
             pthread_create(&array_threads_signals[info->id], NULL, signal_gyro, arg);
             break;
         }
@@ -241,7 +230,6 @@ void *pricipal_engine_thread()
     {
         pthread_testcancel();
         sleep(INTERVAL);
-        sem_wait(&sem_princ_eng);
         for (int i = 0; i < NUM_GYROS; i++)
         {
             sem_wait(&(sem_gs[i]));
@@ -256,7 +244,6 @@ void *pricipal_engine_thread()
         {
             sem_post(&(sem_gs[i]));
         }
-        sem_post(&sem_princ_eng);
     }
 }
 
