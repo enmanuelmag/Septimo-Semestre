@@ -16,9 +16,6 @@
 #define SHM_ADDR 233
 #define NUM_THREADS 5
 #define NUM_THREADS_SIGNALS 4
-#define ABORT 40
-#define DESBALANCE_A 42
-#define DESBALANCE_B 44
 
 /*
  * STRUCTURES
