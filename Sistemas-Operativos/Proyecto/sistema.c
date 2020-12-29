@@ -63,7 +63,7 @@ void create_signals_gyros();
 int init_shared_memory(void);
 
 /*
- * THREAD'S ROUTINES 
+ * THREAD'S ROUTINES DEFINITION
  */
 void *go_up_30m();
 void *go_up_explode();
@@ -74,7 +74,7 @@ void *pricipal_engine_thread();
 void *gyroscope_thread(void *arg);
 
 /*
- * CODE 
+ * IMPLEMETATION 
  */
 int main(int argc, char *argv[])
 {
