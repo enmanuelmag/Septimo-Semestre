@@ -14,8 +14,8 @@
 #define NUM_GYROS 2
 #define NUM_EVENTS 3
 #define SHM_ADDR 233
-#define NUM_THREADS 3
-
+#define NUM_THREADS 5
+#define NUM_THREADS_SIGNALS 4
 #define ABORT 40
 #define DESBALANCE_A 42
 #define DESBALANCE_B 44
@@ -37,27 +37,22 @@ typedef struct arg_gyros
 int EVENT_1 = 0;
 int EVENT_3 = 0;
 int EVENT_4 = 0;
+int INTERVAL = 1;
 
-int main_id;
+pthread_t main_id;
 int is_on = 1;
 int landscape = 0;
-
-int is_gyros1;
-int is_gyros2;
-
 int state_gyros[NUM_GYROS];
 
-sem_t sem_event_1;
-sem_t sem_g1;
-sem_t sem_g2;
-sem_t sem_gs[NUM_GYROS];
 sem_t sem_gas;
+sem_t sem_event_1;
 sem_t sem_princ_eng;
+sem_t sem_gs[NUM_GYROS];
 
 int shmid[NUM];
 arg_gyros array_gyros[NUM_GYROS];
 pthread_t array_threads[NUM_THREADS];
-pthread_t array_threads_signals[NUM_THREADS];
+pthread_t array_threads_signals[NUM_THREADS_SIGNALS];
 int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarma;
 
 /* 
@@ -66,23 +61,24 @@ int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarma;
 void handle_cod_101();
 void handle_cod_102();
 void handle_cod_103();
-//void handle_event_1(int sig);
-void handle_event_3(int sig);
-void handle_event_4(int sig);
 
 /*
  * USER'S FUNCTIONS DEFINITION
  */
-void go_up_30m();
-void go_up_explode();
 void throw_signals();
+void terminate_event_1();
+void terminate_event_3();
+void create_signals_gyros();
 int init_shared_memory(void);
 
 /*
  * THREAD'S ROUTINES 
  */
+void *go_up_30m();
+void *go_up_explode();
 void *signal_gyro(void *arg);
-void *signal_gyro_2();
+void *signal_explote_rocket();
+void *signal_restart_landing();
 void *pricipal_engine_thread();
 void *gyroscope_thread(void *arg);
 
@@ -91,25 +87,39 @@ void *gyroscope_thread(void *arg);
  */
 int main(int argc, char *argv[])
 {
-    //Semaphore initialization
     for (int i = 0; i < NUM_GYROS; i++)
     {
         sem_init(&(sem_gs[i]), 0, 1);
     }
-    //sem_init(&sem_g1, 0, 1);
-    //sem_init(&sem_g2, 0, 1);
     sem_init(&sem_gas, 0, 1);
     sem_init(&sem_event_1, 0, 1);
     sem_init(&sem_princ_eng, 0, 1);
+
+    main_id = pthread_self();
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 
     if (init_shared_memory() == -1)
     {
         printf("Error en init memory\n");
     }
+    printf("Init...\n");
+    create_signals_gyros();
+    pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
 
-    printf("Iniciando...\n");
-    //main_id = pthread_self();
+    pthread_create(&array_threads_signals[2], NULL, signal_restart_landing, NULL);
+    pthread_create(&array_threads_signals[3], NULL, signal_explote_rocket, NULL);
 
+    while (is_on && !landscape)
+    {
+        pthread_testcancel();
+        sleep(INTERVAL);
+        printf("Valor actual distancia %d combustible %d giro1 giro2 alarma= %d %d %d \n",
+               *distance, *gasoline, *gyros1, *gyros2, *alarma);
+    }
+}
+
+void create_signals_gyros()
+{
     for (int i = 0; i < NUM_GYROS; i++)
     {
         arg_gyros *arg = &array_gyros[i];
@@ -127,64 +137,11 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
     }
-
-    pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
-
-    while (is_on && !landscape)
-    {
-        sleep(1);
-        if (EVENT_3)
-        {
-            go_up_30m();
-        }
-        if (EVENT_4)
-        {
-            go_up_explode();
-        }
-    }
-}
-
-void go_up_30m()
-{
-    if (*distance < 30)
-    {
-        *distance += 1;
-    }
-    else
-    {
-        EVENT_1 = 1;
-        EVENT_3 = 1;
-        sem_post(&sem_g1);
-        sem_post(&sem_g2);
-    }
-}
-
-void go_up_explode()
-{
-    sem_wait(&sem_gas);
-    if (*gasoline > 5)
-    {
-        *distance += 1;
-    }
-    else
-    {
-        is_on = 0;
-        //sem_post(&sem_princ_eng);
-        EVENT_1 = 0;
-        EVENT_3 = 0;
-        EVENT_4 = 0;
-        for (int i = 0; i < NUM_THREADS; i++)
-        {
-            //pthread_kill(array_threads[i], NULL);
-        }
-    }
-    sem_post(&sem_gas);
 }
 
 int init_shared_memory(void)
 {
     int i;
-
     for (i = 0; i < NUM; i++)
     {
         if ((shmid[i] = shmget(SHM_ADDR + i, SHMSZ, IPC_CREAT | 0666)) < 0)
@@ -198,16 +155,31 @@ int init_shared_memory(void)
             return (-1);
         }
     }
-
     distance = param[0];
     gasoline = param[1];
     gyros1 = param[2];
     gyros2 = param[3];
     alarma = param[4];
-
     return (1);
 }
 
+void terminate_event_1()
+{
+    pthread_cancel(array_threads[0]);
+    pthread_cancel(array_threads[1]);
+    pthread_cancel(array_threads_signals[0]);
+    pthread_cancel(array_threads_signals[1]);
+}
+
+void terminate_event_3()
+{
+    pthread_cancel(array_threads[3]);
+    pthread_cancel(array_threads_signals[2]);
+}
+
+/*
+ * Thread routines for corrections in rocket
+ */
 void *gyroscope_thread(void *arg)
 {
     arg_gyros *info = arg;
@@ -215,9 +187,17 @@ void *gyroscope_thread(void *arg)
     sem_t sem_gyro = info->sem_gyro;
     int *dir_gyros = info->men_gyro;
     int *on_gyro = info->on_gyro;
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    if (rc != 0)
+    {
+        perror("Error in set Thread Cancellation\n");
+    }
     while (is_on)
     {
-        printf("Valor a corregir %d\n", *dir_gyros);
+        pthread_testcancel();
+
         sem_wait(&sem_event_1);
         sem_wait(&sem_gyro);
         if (*dir_gyros)
@@ -236,53 +216,108 @@ void *gyroscope_thread(void *arg)
             }
             sem_post(&sem_gyro);
             sem_post(&sem_event_1);
-            sleep(1);
+            sleep(INTERVAL);
         }
         else
         {
             sem_post(&sem_gyro);
             sem_post(&sem_event_1);
-            pthread_create(&array_threads_signals[0], NULL, signal_gyro, arg);
+            pthread_create(&array_threads_signals[info->id], NULL, signal_gyro, arg);
             break;
-            //int res = pthread_kill(array_threads_signals[info->id], SIGCONT);
-            //printf("Res: %d\n", res);
         }
     }
 }
 
 void *pricipal_engine_thread()
 {
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    if (rc != 0)
+    {
+        perror("Error in set Thread Cancellation\n");
+    }
     while (is_on)
     {
-        sleep(1);
+        pthread_testcancel();
+        sleep(INTERVAL);
         sem_wait(&sem_princ_eng);
-        sem_wait(&sem_g1);
-        sem_wait(&sem_g2);
-        sem_wait(&sem_gas);
-        if (is_gyros1 || is_gyros2)
+        for (int i = 0; i < NUM_GYROS; i++)
         {
-            *gasoline -= 0.5;
+            sem_wait(&(sem_gs[i]));
         }
-        else
+        sem_wait(&sem_gas);
+        if (state_gyros[0] || state_gyros[1])
         {
-            *gasoline -= 1;
+            *gasoline += 0.5;
         }
         sem_post(&sem_gas);
-        sem_post(&sem_g2);
-        sem_post(&sem_g1);
+        for (int i = 0; i < NUM_GYROS; i++)
+        {
+            sem_post(&(sem_gs[i]));
+        }
         sem_post(&sem_princ_eng);
     }
 }
 
+void *go_up_30m()
+{
+    while (is_on)
+    {
+        sleep(INTERVAL);
+        if (*distance < 30)
+        {
+            *distance += 2;
+        }
+        else
+        {
+            create_signals_gyros();
+            pthread_create(&array_threads_signals[2], NULL, signal_restart_landing, NULL);
+            break;
+        }
+    }
+}
+
+void *go_up_explode()
+{
+    while (is_on)
+    {
+        sleep(INTERVAL);
+        sem_wait(&sem_gas);
+        if (*gasoline > 5)
+        {
+            *distance += 2; //para compensar lo que resta el programa del profe
+        }
+        else
+        {
+            is_on = 0;
+            pthread_cancel(array_threads[2]);
+            pthread_cancel(main_id);
+            break;
+        }
+        sem_post(&sem_gas);
+    }
+    printf("ROCKET HAS BEEN EXPLOTE!\n");
+}
+
+/*
+ * Thread routines for check singnals 
+ */
 void *signal_gyro(void *arg)
 {
-
     arg_gyros *info = arg;
     printf("Nacio hilo del signal Nº %d\n", info->id);
-    while (1)
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    if (rc != 0)
     {
-        sleep(1);
-        printf("Analizando %d\n", info->id);
+        perror("Error in set Thread Cancellation\n");
+    }
+    while (is_on)
+    {
+        pthread_testcancel();
+        sleep(INTERVAL);
         if (*(info->men_gyro))
         {
             int res, err;
@@ -314,6 +349,48 @@ void *signal_gyro(void *arg)
             }
             pthread_attr_destroy(&attr);
             pthread_kill(pthread_self(), SIGCONT);*/
+        }
+    }
+}
+
+void *signal_restart_landing()
+{
+    printf("Nacio hilo del signal Nº 3 (30 metros alarma)\n");
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    if (rc != 0)
+    {
+        perror("Error in set Thread Cancellation\n");
+    }
+    while (is_on)
+    {
+        pthread_testcancel();
+        sleep(INTERVAL);
+        if (
+            *distance < 5 &&
+            *gyros1 != 0 && *gyros2 != 0)
+        {
+            terminate_event_1();
+            pthread_create(&array_threads[3], NULL, go_up_30m, NULL);
+            break;
+        }
+    }
+}
+
+void *signal_explote_rocket()
+{
+    printf("Nacio hilo del signal Nº 4 (10por gasolina)\n");
+    while (is_on)
+    {
+        sleep(INTERVAL);
+        if (
+            *gasoline < 10)
+        {
+            terminate_event_1();
+            terminate_event_3();
+            pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
+            break;
         }
     }
 }
