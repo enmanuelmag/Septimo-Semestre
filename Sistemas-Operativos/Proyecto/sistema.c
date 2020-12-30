@@ -10,15 +10,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/types.h>
-/*
- * TODO
- * USAR PAUSE Y KILL para despetar hilos mejor
- * Revisar terminacion de todos los hilos (checked)
- * Agregar prioridad en los hilos (checked)
- * Agregar afinidad en los hilos a lso CPU (checked)
- * Agregar manejadores para las alarmas
- * Hacer pruebas con mas casos complejos (50%)
- */
+
 #define NUM 5
 #define SHMSZ 4
 #define NUM_GYROS 2
@@ -30,9 +22,7 @@
 #define SUCCESS_MSG "Hilo '%s %d' seteado en el CPU %d\n"
 #define FAILURE_MSG "Error al setear el hilo '%s %d' en CPU %d\n"
 
-/*
- * STRUCTURES
- */
+//STRUCTURES
 typedef struct arg_gyros
 {
     int id;
@@ -41,11 +31,12 @@ typedef struct arg_gyros
     sem_t sem_gyro;
 } arg_gyros;
 
-/*
- * GLOBAL VARIABLES 
- */
+//GLOBAL VARIABLES
 int INTERVAL = 1;
-
+int ret;
+int newprio = 1;
+sem_t sem_gas;
+sem_t sem_gs[NUM_GYROS];
 int is_on = 1;
 int shmid[NUM];
 int landscape = 0;
@@ -53,34 +44,27 @@ int princp_engine = 1;
 int state_gyros[NUM_GYROS];
 int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarma;
 
-sem_t sem_gas;
-sem_t sem_gs[NUM_GYROS];
-
 arg_gyros array_gyros[NUM_GYROS];
 pthread_t main_id;
 pthread_t array_threads[NUM_THREADS];
 pthread_t array_threads_signals[NUM_THREADS_SIGNALS];
 
-/* 
- * SINGAL'S HANDLE DEFINITION
- */
+//USER'S FUNCTIONS DEFINITION
 void handle_cod_101();
 void handle_cod_102();
 void handle_cod_103();
-
-/*
- * USER'S FUNCTIONS DEFINITION
- */
 void terminate_event_1();
 void terminate_event_3();
 void restart_thrusters();
 void create_signals_gyros();
 int init_shared_memory(void);
 void restart_principal_engine();
+void create_pe_thread();
+void create_rest_thread();
+void create_explo_thread();
+void create_land_thread();
 
-/*
- * THREAD'S ROUTINES DEFINITION
- */
+//THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
 void *go_up_explode();
 void *signal_gyro(void *arg);
@@ -90,9 +74,7 @@ void *signal_restart_landing();
 void *pricipal_engine_thread();
 void *gyroscope_thread(void *arg);
 
-/*
- * IMPLEMETATION 
- */
+//IMPLEMETATION
 int main(int argc, char *argv[])
 {
     main_id = pthread_self();
@@ -111,39 +93,10 @@ int main(int argc, char *argv[])
     printf("Init...\n");
     create_signals_gyros();
 
-    pthread_attr_t tattr;
-    int ret;
-    int newprio = 1;
-    struct sched_param s_param;
-    ret = pthread_attr_init(&tattr);
-    ret = pthread_attr_getschedparam(&tattr, &s_param);
-    s_param.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr, &s_param);
-    pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
-
-    pthread_attr_t tattr_rest;
-    struct sched_param s_param_rest;
-    ret = pthread_attr_init(&tattr_rest);
-    ret = pthread_attr_getschedparam(&tattr_rest, &s_param_rest);
-    s_param_rest.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_rest, &s_param_rest);
-    pthread_create(&array_threads_signals[2], &tattr_rest, signal_restart_landing, NULL);
-
-    pthread_attr_t tattr_expl;
-    struct sched_param s_param_expl;
-    ret = pthread_attr_init(&tattr_expl);
-    ret = pthread_attr_getschedparam(&tattr_expl, &s_param_expl);
-    s_param_expl.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_expl, &s_param_expl);
-    pthread_create(&array_threads_signals[3], &tattr_expl, signal_explote_rocket, NULL);
-
-    pthread_attr_t tattr_land;
-    struct sched_param s_param_land;
-    ret = pthread_attr_init(&tattr_land);
-    ret = pthread_attr_getschedparam(&tattr_land, &s_param_land);
-    s_param_land.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_land, &s_param_land);
-    pthread_create(&array_threads_signals[4], &tattr_land, signal_landing_check, NULL);
+    create_pe_thread();
+    create_rest_thread();
+    create_explo_thread();
+    create_land_thread();
 
     while (is_on && !landscape)
     {
@@ -208,6 +161,50 @@ int init_shared_memory(void)
     return (1);
 }
 
+void create_pe_thread()
+{
+    pthread_attr_t tattr;
+    struct sched_param s_param;
+    ret = pthread_attr_init(&tattr);
+    ret = pthread_attr_getschedparam(&tattr, &s_param);
+    s_param.sched_priority = newprio;
+    ret = pthread_attr_setschedparam(&tattr, &s_param);
+    pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
+}
+
+void create_rest_thread()
+{
+    pthread_attr_t tattr_rest;
+    struct sched_param s_param_rest;
+    ret = pthread_attr_init(&tattr_rest);
+    ret = pthread_attr_getschedparam(&tattr_rest, &s_param_rest);
+    s_param_rest.sched_priority = newprio;
+    ret = pthread_attr_setschedparam(&tattr_rest, &s_param_rest);
+    pthread_create(&array_threads_signals[2], &tattr_rest, signal_restart_landing, NULL);
+}
+
+void create_explo_thread()
+{
+    pthread_attr_t tattr_expl;
+    struct sched_param s_param_expl;
+    ret = pthread_attr_init(&tattr_expl);
+    ret = pthread_attr_getschedparam(&tattr_expl, &s_param_expl);
+    s_param_expl.sched_priority = newprio;
+    ret = pthread_attr_setschedparam(&tattr_expl, &s_param_expl);
+    pthread_create(&array_threads_signals[3], &tattr_expl, signal_explote_rocket, NULL);
+}
+
+void create_land_thread()
+{
+    pthread_attr_t tattr_land;
+    struct sched_param s_param_land;
+    ret = pthread_attr_init(&tattr_land);
+    ret = pthread_attr_getschedparam(&tattr_land, &s_param_land);
+    s_param_land.sched_priority = newprio;
+    ret = pthread_attr_setschedparam(&tattr_land, &s_param_land);
+    pthread_create(&array_threads_signals[4], &tattr_land, signal_landing_check, NULL);
+}
+
 void terminate_event_1()
 {
     pthread_cancel(array_threads[0]);
@@ -232,7 +229,8 @@ void manage_principal_engine(int force_restart)
     if (princp_engine == 0)
     {
         princp_engine = 1;
-        pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
+        create_pe_thread();
+        //pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
     }
 }
 
@@ -242,9 +240,7 @@ void restart_thrusters()
     create_signals_gyros();
 }
 
-/*
- * Thread routines for corrections in rocket
- */
+//Thread routines for corrections in rocket
 void *gyroscope_thread(void *arg)
 {
     arg_gyros *info = arg;
@@ -365,7 +361,8 @@ void *go_up_30m()
         else
         {
             create_signals_gyros();
-            pthread_create(&array_threads_signals[2], NULL, signal_restart_landing, NULL);
+            create_rest_thread();
+            //pthread_create(&array_threads_signals[2], NULL, signal_restart_landing, NULL);
             break;
         }
     }
@@ -403,9 +400,7 @@ void *go_up_explode()
     printf("ROCKET HAS BEEN EXPLOTE!\n");
 }
 
-/*
- * Thread routines for check singnals 
- */
+//Thread routines for check singnals 
 void *signal_gyro(void *arg)
 {
     arg_gyros *info = arg;
