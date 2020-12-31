@@ -63,6 +63,7 @@ void create_pe_thread();
 void create_rest_thread();
 void create_explo_thread();
 void create_land_thread();
+void sig_handler_threads(int signo);
 
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
@@ -91,12 +92,12 @@ int main(int argc, char *argv[])
     }
 
     printf("Init...\n");
-    create_signals_gyros();
+    create_signals_gyros(); //gyroscope_thread check
 
-    create_pe_thread();
-    create_rest_thread();
-    create_explo_thread();
-    create_land_thread();
+    create_pe_thread();    //check
+    create_rest_thread();  //hijo go_up_30m check
+    create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
+    create_land_thread();  //
 
     while (is_on && !landscape)
     {
@@ -112,9 +113,6 @@ void create_signals_gyros()
     for (int i = 0; i < NUM_GYROS; i++)
     {
         pthread_attr_t tattr;
-        pthread_t tid;
-        int ret;
-        int newprio = 1;
         struct sched_param s_param;
         ret = pthread_attr_init(&tattr);
         ret = pthread_attr_getschedparam(&tattr, &s_param);
@@ -134,6 +132,7 @@ void create_signals_gyros()
             perror("Creation of thread failed");
             exit(EXIT_FAILURE);
         }
+        res = pthread_create(&array_threads[i], NULL, gyroscope_thread, arg);
     }
 }
 
@@ -181,6 +180,8 @@ void create_rest_thread()
     s_param_rest.sched_priority = newprio;
     ret = pthread_attr_setschedparam(&tattr_rest, &s_param_rest);
     pthread_create(&array_threads_signals[2], &tattr_rest, signal_restart_landing, NULL);
+
+    pthread_create(&array_threads[3], NULL, go_up_30m, NULL);
 }
 
 void create_explo_thread()
@@ -223,14 +224,13 @@ void manage_principal_engine(int force_restart)
 {
     if (force_restart)
     {
-        pthread_cancel(array_threads[2]);
+        pthread_kill(array_threads[2], SIGTSTP);
         princp_engine = 0;
     }
     if (princp_engine == 0)
     {
         princp_engine = 1;
-        create_pe_thread();
-        //pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
+        pthread_kill(array_threads[2], SIGCONT);
     }
 }
 
@@ -240,9 +240,30 @@ void restart_thrusters()
     create_signals_gyros();
 }
 
+void sig_handler_threads(int signo)
+{
+    int i;
+    if (signo == SIGCONT)
+    {
+        printf("Desperté\n");
+        return;
+    }
+    else if (signo == SIGTSTP)
+    {
+        pause();
+        return;
+    }
+    return;
+}
+
 //Thread routines for corrections in rocket
 void *gyroscope_thread(void *arg)
 {
+    if (signal(SIGCONT, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGCONT\n");
+    if (signal(SIGTSTP, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGTSTP\n");
+    printf("Creado\n");
     arg_gyros *info = arg;
     const pthread_t pid = pthread_self();
     const int core_id = info->id % CPU_CORES;
@@ -264,6 +285,7 @@ void *gyroscope_thread(void *arg)
     {
         perror("Error in set Thread Cancellation\n");
     }
+    pause();
     while (is_on)
     {
         pthread_testcancel();
@@ -289,14 +311,19 @@ void *gyroscope_thread(void *arg)
         else
         {
             sem_post(&sem_gyro);
-            pthread_create(&array_threads_signals[info->id], NULL, signal_gyro, arg);
-            break;
+            pthread_kill(array_threads_signals[info->id], SIGCONT);
+            pause();
         }
     }
 }
 
 void *pricipal_engine_thread()
 {
+    if (signal(SIGCONT, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGINT\n");
+    if (signal(SIGTSTP, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGTSTP\n");
+
     const pthread_t pid = pthread_self();
     const int core_id = 4 % CPU_CORES;
     cpu_set_t cpuset;
@@ -341,6 +368,11 @@ void *pricipal_engine_thread()
 
 void *go_up_30m()
 {
+    if (signal(SIGCONT, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGINT\n");
+    if (signal(SIGTSTP, sig_handler_threads) == SIG_ERR)
+        printf("\nCan't catch SIGTSTP\n");
+
     const pthread_t pid = pthread_self();
     const int core_id = 2 % CPU_CORES;
     cpu_set_t cpuset;
@@ -351,8 +383,13 @@ void *go_up_30m()
     {
         printf(FAILURE_MSG, "SUBIR (30 m)", 2, core_id);
     }
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    pause();
     while (is_on)
     {
+        pthread_testcancel();
         sleep(INTERVAL);
         if (*distance < 30)
         {
@@ -361,9 +398,8 @@ void *go_up_30m()
         else
         {
             create_signals_gyros();
-            create_rest_thread();
-            //pthread_create(&array_threads_signals[2], NULL, signal_restart_landing, NULL);
-            break;
+            pthread_kill(array_threads_signals[2], SIGCONT);
+            pause();
         }
     }
 }
@@ -380,8 +416,12 @@ void *go_up_explode()
     {
         printf(FAILURE_MSG, "ABORTAR (Gas 10)", 3, core_id);
     }
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     while (is_on)
     {
+        pthread_testcancel();
         sleep(INTERVAL);
         sem_wait(&sem_gas);
         if (*gasoline > 5)
@@ -400,7 +440,7 @@ void *go_up_explode()
     printf("ROCKET HAS BEEN EXPLOTE!\n");
 }
 
-//Thread routines for check singnals 
+//Thread routines for check singnals
 void *signal_gyro(void *arg)
 {
     arg_gyros *info = arg;
@@ -437,34 +477,16 @@ void *signal_gyro(void *arg)
         if (*(info->men_gyro))
         {
             int res, err;
-            res = pthread_create(&array_threads[0], NULL, gyroscope_thread, arg);
-            if (res != 0)
+            printf("ID: %d", info->id);
+            if (pthread_kill(array_threads[info->id], SIGCONT) == 0)
             {
-                perror("Creation of thread failed");
-                exit(EXIT_FAILURE);
+                printf("Wake\n");
             }
-            break;
-            /* arg_gyros *arg = &array_gyros[0];
-            arg->id = 1;
-            arg->men_gyro = param[2];
-            arg->on_gyro = &is_gyros1;
-            arg->sem_gyro = sem_g1; 
-            
-            pthread_attr_t attr;
-            res = pthread_attr_init(&attr);
-            if (res != 0)
+            else
             {
-                perror("Attribute init failed");
-                exit(EXIT_FAILURE);
+                printf("Error\n");
             }
-            res = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-            if (res != 0)
-            {
-                perror("Setting detached state failed");
-                exit(EXIT_FAILURE);
-            }
-            pthread_attr_destroy(&attr);
-            pthread_kill(pthread_self(), SIGCONT);*/
+            pause();
         }
     }
 }
@@ -502,8 +524,8 @@ void *signal_restart_landing()
         {
             terminate_event_1();
             manage_principal_engine(0);
-            pthread_create(&array_threads[3], NULL, go_up_30m, NULL);
-            break;
+            pthread_kill(array_threads[3], SIGCONT);
+            pause();
         }
     }
 }
@@ -524,8 +546,12 @@ void *signal_explote_rocket()
     {
         printf(SUCCESS_MSG, "SIGNAL (Gas 10)", 3, core_id);
     }
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     while (is_on)
     {
+        pthread_testcancel();
         sleep(INTERVAL);
         if (*gasoline < 10)
         {
@@ -563,6 +589,7 @@ void *signal_landing_check()
     }
     while (is_on)
     {
+        pthread_testcancel();
         sleep(INTERVAL);
         if (*distance == 0 &&
             *gyros1 == 0 && *gyros2 == 0)
@@ -574,15 +601,14 @@ void *signal_landing_check()
             printf("SUCCESSFUL LANDING\n");
             break;
         }
-
         if (
             *distance <= 1 &&
-                *gyros1 == 0 ||
-            *gyros2 == 0)
+            (*gyros1 == 0 ||
+             *gyros2 == 0))
         {
             terminate_event_1();
             princp_engine = 0;
-            pthread_cancel(array_threads[2]);
+            pthread_kill(array_threads[2], SIGTSTP);
         }
     }
 }
