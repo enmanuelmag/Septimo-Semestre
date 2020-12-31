@@ -33,6 +33,8 @@ typedef struct arg_gyros
 
 //GLOBAL VARIABLES
 int INTERVAL = 1;
+int manual_explote = 0;
+int last_alamra = 0;
 int ret;
 int newprio = 1;
 sem_t sem_gas;
@@ -64,6 +66,7 @@ void create_rest_thread();
 void create_explo_thread();
 void create_land_thread();
 void sig_handler_threads(int signo);
+void create_signal_manual();
 
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
@@ -74,6 +77,7 @@ void *signal_explote_rocket();
 void *signal_restart_landing();
 void *pricipal_engine_thread();
 void *gyroscope_thread(void *arg);
+void *sig_handler_manual();
 
 //IMPLEMETATION
 int main(int argc, char *argv[])
@@ -98,6 +102,7 @@ int main(int argc, char *argv[])
     create_rest_thread();  //hijo go_up_30m check
     create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
     create_land_thread();  //
+    create_signal_manual();
 
     while (is_on && !landscape)
     {
@@ -206,6 +211,17 @@ void create_land_thread()
     pthread_create(&array_threads_signals[4], &tattr_land, signal_landing_check, NULL);
 }
 
+void create_signal_manual()
+{
+    pthread_attr_t tattr_land;
+    struct sched_param s_param_land;
+    ret = pthread_attr_init(&tattr_land);
+    ret = pthread_attr_getschedparam(&tattr_land, &s_param_land);
+    s_param_land.sched_priority = newprio;
+    ret = pthread_attr_setschedparam(&tattr_land, &s_param_land);
+    pthread_create(&array_threads_signals[4], &tattr_land, sig_handler_manual, NULL);
+}
+
 void terminate_event_1()
 {
     pthread_cancel(array_threads[0]);
@@ -226,8 +242,10 @@ void manage_principal_engine(int force_restart)
     {
         pthread_kill(array_threads[2], SIGTSTP);
         princp_engine = 0;
+        create_pe_thread();
+        princp_engine = 1;
     }
-    if (princp_engine == 0)
+    else if (princp_engine == 0)
     {
         princp_engine = 1;
         pthread_kill(array_threads[2], SIGCONT);
@@ -245,7 +263,6 @@ void sig_handler_threads(int signo)
     int i;
     if (signo == SIGCONT)
     {
-        printf("Desperté\n");
         return;
     }
     else if (signo == SIGTSTP)
@@ -263,7 +280,6 @@ void *gyroscope_thread(void *arg)
         printf("\nCan't catch SIGCONT\n");
     if (signal(SIGTSTP, sig_handler_threads) == SIG_ERR)
         printf("\nCan't catch SIGTSTP\n");
-    printf("Creado\n");
     arg_gyros *info = arg;
     const pthread_t pid = pthread_self();
     const int core_id = info->id % CPU_CORES;
@@ -477,12 +493,7 @@ void *signal_gyro(void *arg)
         if (*(info->men_gyro))
         {
             int res, err;
-            printf("ID: %d", info->id);
-            if (pthread_kill(array_threads[info->id], SIGCONT) == 0)
-            {
-                printf("Wake\n");
-            }
-            else
+            if (pthread_kill(array_threads[info->id], SIGCONT) != 0)
             {
                 printf("Error\n");
             }
@@ -553,7 +564,7 @@ void *signal_explote_rocket()
     {
         pthread_testcancel();
         sleep(INTERVAL);
-        if (*gasoline < 10)
+        if (*gasoline < 10 || manual_explote)
         {
             manage_principal_engine(0);
             terminate_event_1();
@@ -609,6 +620,54 @@ void *signal_landing_check()
             terminate_event_1();
             princp_engine = 0;
             pthread_kill(array_threads[2], SIGTSTP);
+        }
+    }
+}
+
+void *sig_handler_manual()
+{
+    const pthread_t pid = pthread_self();
+    const int core_id = 6 % CPU_CORES;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id, &cpuset);
+    const int aff_result = pthread_setaffinity_np(pid, sizeof(cpu_set_t), &cpuset);
+    if (aff_result != 0)
+    {
+        printf(FAILURE_MSG, "SIGNAL (Alarm)", 6, core_id);
+    }
+    else
+    {
+        printf(SUCCESS_MSG, "SIGNAL (Alarm)", 6, core_id);
+    }
+    int oldtype, rc;
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    while (is_on)
+    {
+        pthread_testcancel();
+        sleep(INTERVAL);
+        if (last_alamra != *alarma)
+        {
+            if (*alarma == 101)
+            {
+                manage_principal_engine(1);
+                restart_thrusters();
+            }
+            else if (*alarma == 102)
+            {
+                manage_principal_engine(1);
+            }
+            else if (*alarma == 103)
+            {
+                restart_thrusters();
+            }
+            else if (*alarma == 104)
+            {
+                manual_explote = 1;
+                break;
+            }
+            last_alamra = *alarma;
         }
     }
 }
