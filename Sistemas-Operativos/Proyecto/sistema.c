@@ -1,5 +1,6 @@
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
 #define __USE_GNU
 #include <sched.h>
 #include <stdlib.h>
@@ -10,14 +11,20 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
+#define BUFF_MSG 9999
 #define NUM 5
 #define SHMSZ 4
+#define MAXTRY 32
 #define NUM_GYROS 2
 #define CPU_CORES 4
 #define NUM_EVENTS 3
 #define SHM_ADDR 233
 #define NUM_THREADS 5
+#define NUM_SCK_THREAD 7
 #define NUM_THREADS_SIGNALS 5
 #define SUCCESS_MSG "Hilo '%s %d' seteado en el CPU %d\n"
 #define FAILURE_MSG "Error al setear el hilo '%s %d' en CPU %d\n"
@@ -38,7 +45,9 @@ int last_alamra = 0;
 int ret;
 int newprio = 1;
 sem_t sem_gas;
+sem_t sem_sock;
 sem_t sem_gs[NUM_GYROS];
+sem_t sem_msg[NUM_SCK_THREAD];
 int is_on = 1;
 int shmid[NUM];
 int landscape = 0;
@@ -50,6 +59,8 @@ arg_gyros array_gyros[NUM_GYROS];
 pthread_t main_id;
 pthread_t array_threads[NUM_THREADS];
 pthread_t array_threads_signals[NUM_THREADS_SIGNALS];
+
+struct sockaddr_in broadcastAddr;
 
 //USER'S FUNCTIONS DEFINITION
 void handle_cod_101();
@@ -67,6 +78,7 @@ void create_explo_thread();
 void create_land_thread();
 void sig_handler_threads(int signo);
 void create_signal_manual();
+int create_sck_sender();
 
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
@@ -82,6 +94,11 @@ void *sig_handler_manual();
 //IMPLEMETATION
 int main(int argc, char *argv[])
 {
+    memset(&broadcastAddr, 0, sizeof(broadcastAddr));
+    broadcastAddr.sin_family = AF_INET;
+    inet_pton(AF_INET, "255.255.255.255", &broadcastAddr.sin_addr);
+    broadcastAddr.sin_port = htons(8585);
+
     main_id = pthread_self();
     for (int i = 0; i < NUM_GYROS; i++)
     {
@@ -89,6 +106,12 @@ int main(int argc, char *argv[])
     }
 
     sem_init(&sem_gas, 0, 1);
+    sem_init(&sem_sock, 0, 1);
+    for (int i = 0; i < NUM_SCK_THREAD; i++)
+    {
+        sem_init(&sem_msg[i], 0, 0);
+    }
+
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     if (init_shared_memory() == -1)
     {
@@ -96,6 +119,49 @@ int main(int argc, char *argv[])
     }
 
     printf("Init...\n");
+
+    int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (listeningSocket <= 0)
+    {
+        printf("Error: listenForPackets - socket() failed.\n");
+        //closeall
+        return -1;
+    }
+
+    // set timeout to 2 seconds.
+    struct timeval timeV;
+    timeV.tv_sec = 2;
+    timeV.tv_usec = 0;
+
+    if (setsockopt(listeningSocket, SOL_SOCKET, SO_RCVTIMEO, &timeV, sizeof(timeV)) == -1)
+    {
+        printf("Error: listenForPackets - setsockopt failed\n");
+        close(listeningSocket);
+        //closeall
+        return -1;
+    }
+
+    // bind the port
+    struct sockaddr_in sockaddr;
+    memset(&sockaddr, 0, sizeof(sockaddr));
+
+    sockaddr.sin_family = AF_INET;
+    sockaddr.sin_port = htons(8585);
+    sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    int status = bind(listeningSocket, (struct sockaddr *)&sockaddr, sizeof(sockaddr));
+    if (status == -1)
+    {
+        close(listeningSocket);
+        printf("Error: listenForPackets - bind() failed.\n");
+        //closeall
+        return -1;
+    }
+
+    // receive
+    struct sockaddr_in receiveSockaddr;
+    socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
+
     create_signals_gyros(); //gyroscope_thread check
 
     create_pe_thread();    //check
@@ -106,11 +172,31 @@ int main(int argc, char *argv[])
 
     while (is_on && !landscape)
     {
+        for (int i = 0; i < NUM_SCK_THREAD; i++)
+        {
+            char *buf = malloc(BUFF_MSG);
+            ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&receiveSockaddr, &receiveSockaddrLen);
+            if (result > 0)
+            {
+                printf("SSIZE %ld MSG: %s\n", result, buf);
+            }
+            
+            free(buf);
+        }
+        for (int i = 0; i < NUM_SCK_THREAD; i++)
+        {
+            sem_post(&sem_msg[i]);
+        }
+        
+    }
+
+    /* while (is_on && !landscape)
+    {
         pthread_testcancel();
         sleep(INTERVAL);
         printf("Valor actual distancia %d combustible %d giro1 giro2 alarma= %d %d %d \n",
                *distance, *gasoline, *gyros1, *gyros2, *alarma);
-    }
+    } */
 }
 
 void create_signals_gyros()
@@ -273,6 +359,46 @@ void sig_handler_threads(int signo)
     return;
 }
 
+int create_sck_sender()
+{
+    int socketSD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketSD <= 0)
+    {
+        printf("Error: Could not open socket.\n");
+        return -1;
+    }
+
+    // set socket options enable broadcast
+    int broadcastEnable = 1;
+    int ret_create = setsockopt(socketSD, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+    if (ret_create)
+    {
+        printf("Error: Could not open set socket to broadcast mode\n");
+        close(socketSD);
+        return -1;
+    }
+    return socketSD;
+}
+
+void send_mesg(int sckfd, char *msg, int len_msg)
+{
+
+    int numsec;
+    sem_wait(&sem_sock);
+    for (numsec = 1; numsec <= MAXTRY; numsec <<= 1)
+    {
+        int ret_send = sendto(sckfd, msg, strlen(msg), 0, (struct sockaddr *)&broadcastAddr, sizeof(broadcastAddr));
+        if (ret_send > 0)
+        {
+            break;
+        }
+        else if (numsec <= MAXTRY / 2)
+        {
+            sleep(numsec);
+        }
+    }
+    sem_post(&sem_sock);
+}
 //Thread routines for corrections in rocket
 void *gyroscope_thread(void *arg)
 {
@@ -327,7 +453,7 @@ void *gyroscope_thread(void *arg)
         else
         {
             sem_post(&sem_gyro);
-            pthread_kill(array_threads_signals[info->id], SIGCONT);
+            //pthread_kill(array_threads_signals[info->id], SIGCONT);
             pause();
         }
     }
@@ -361,6 +487,9 @@ void *pricipal_engine_thread()
     {
         perror("Error in set Thread Cancellation\n");
     }
+    int sockfd = create_sck_sender();
+    char *msg = "Combustible: %d (%s)\n";
+    char *state;
     while (is_on)
     {
         pthread_testcancel();
@@ -379,6 +508,13 @@ void *pricipal_engine_thread()
         {
             sem_post(&(sem_gs[i]));
         }
+        state = princp_engine ? "ON" : "OFF";
+        int space = snprintf(NULL, 0, msg, *gasoline, state);
+        char *buffer = malloc(space);
+        snprintf(buffer, space, msg, *gasoline, state);
+        send_mesg(sockfd, buffer, space);
+        free(buffer);
+        sem_wait(&sem_msg[6]);
     }
 }
 
@@ -414,7 +550,7 @@ void *go_up_30m()
         else
         {
             create_signals_gyros();
-            pthread_kill(array_threads_signals[2], SIGCONT);
+            //pthread_kill(array_threads_signals[2], SIGCONT);
             pause();
         }
     }
@@ -482,6 +618,11 @@ void *signal_gyro(void *arg)
     {
         perror("Error in set Thread Cancellation\n");
     }
+
+    // Configure the port and ip we want to send to
+    int sockfd = create_sck_sender();
+    char *msg = "Giroscopio %d: %d (%s)\n";
+    char *state;
     while (is_on)
     {
         pthread_testcancel();
@@ -490,15 +631,23 @@ void *signal_gyro(void *arg)
             break;
         }
         sleep(INTERVAL);
+        state = "OFF";
         if (*(info->men_gyro))
         {
+            state = "ON - iniciando correcciones";
             int res, err;
             if (pthread_kill(array_threads[info->id], SIGCONT) != 0)
             {
                 printf("Error\n");
             }
-            pause();
+            //pause();
         }
+        int space = snprintf(NULL, 0, msg, info->id, *(info->men_gyro), state);
+        char *buffer = malloc(space);
+        snprintf(buffer, space, msg, info->id, *(info->men_gyro), state);
+        send_mesg(sockfd, buffer, space);
+        free(buffer);
+        sem_wait(&sem_msg[0]);
     }
 }
 
@@ -525,6 +674,8 @@ void *signal_restart_landing()
     {
         perror("Error in set Thread Cancellation\n");
     }
+    int sockfd = create_sck_sender();
+    char *msg = "Reiniciando aterrizaje (subiendo a 30 metros)\n";
     while (is_on)
     {
         pthread_testcancel();
@@ -536,7 +687,9 @@ void *signal_restart_landing()
             terminate_event_1();
             manage_principal_engine(0);
             pthread_kill(array_threads[3], SIGCONT);
-            pause();
+            send_mesg(sockfd, msg, sizeof(msg));
+            sem_wait(&sem_msg[1]);
+            //pause();
         }
     }
 }
@@ -560,6 +713,8 @@ void *signal_explote_rocket()
     int oldtype, rc;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    int sockfd = create_sck_sender();
+    char *msg = "Abortando aterrizaje\n";
     while (is_on)
     {
         pthread_testcancel();
@@ -570,6 +725,8 @@ void *signal_explote_rocket()
             terminate_event_1();
             terminate_event_3();
             pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
+            send_mesg(sockfd, msg, sizeof(msg));
+            sem_wait(&sem_msg[2]);
             break;
         }
     }
@@ -598,6 +755,9 @@ void *signal_landing_check()
     {
         perror("Error in set Thread Cancellation\n");
     }
+    int sockfd = create_sck_sender();
+    char *msg = "Distancia a tierra: %d %s\n";
+    char *act;
     while (is_on)
     {
         pthread_testcancel();
@@ -612,6 +772,7 @@ void *signal_landing_check()
             printf("SUCCESSFUL LANDING\n");
             break;
         }
+        act = "";
         if (
             *distance <= 1 &&
             (*gyros1 == 0 ||
@@ -620,7 +781,14 @@ void *signal_landing_check()
             terminate_event_1();
             princp_engine = 0;
             pthread_kill(array_threads[2], SIGTSTP);
+            act = "- apagando propulsores";
         }
+        int space = snprintf(NULL, 0, msg, *distance, act);
+        char *buffer = malloc(space);
+        snprintf(buffer, space, msg, *distance, act);
+        send_mesg(sockfd, buffer, space);
+        free(buffer);
+        sem_wait(&sem_msg[3]);
     }
 }
 
@@ -643,6 +811,8 @@ void *sig_handler_manual()
     int oldtype, rc;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    int sockfd = create_sck_sender();
+    char *msg;
     while (is_on)
     {
         pthread_testcancel();
@@ -653,21 +823,30 @@ void *sig_handler_manual()
             {
                 manage_principal_engine(1);
                 restart_thrusters();
+                msg = "Reiniciando todos los propulsores\n";
+                send_mesg(sockfd, msg, sizeof(msg));
             }
             else if (*alarma == 102)
             {
                 manage_principal_engine(1);
+                msg = "Reiniciando propulsor principal\n";
+                send_mesg(sockfd, msg, sizeof(msg));
             }
             else if (*alarma == 103)
             {
                 restart_thrusters();
+                msg = "Reiniciando propulsores de orientación\n";
+                send_mesg(sockfd, msg, sizeof(msg));
             }
             else if (*alarma == 104)
             {
                 manual_explote = 1;
+                msg = "Iniciando secuencia de autodestrucción\n";
+                send_mesg(sockfd, msg, sizeof(msg));
                 break;
             }
             last_alamra = *alarma;
         }
+        sem_wait(&sem_msg[5]);
     }
 }
