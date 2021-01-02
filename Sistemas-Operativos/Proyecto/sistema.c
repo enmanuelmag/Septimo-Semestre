@@ -46,6 +46,7 @@ int ret;
 int newprio = 1;
 sem_t sem_gas;
 sem_t sem_sock;
+sem_t sem_dist;
 sem_t sem_gs[NUM_GYROS];
 sem_t sem_msg[NUM_SCK_THREAD];
 int is_on = 1;
@@ -107,6 +108,7 @@ int main(int argc, char *argv[])
 
     sem_init(&sem_gas, 0, 1);
     sem_init(&sem_sock, 0, 1);
+    sem_init(&sem_dist, 0, 1);
     for (int i = 0; i < NUM_SCK_THREAD; i++)
     {
         sem_init(&sem_msg[i], 0, 0);
@@ -180,23 +182,14 @@ int main(int argc, char *argv[])
             {
                 printf("SSIZE %ld MSG: %s\n", result, buf);
             }
-            
+
             free(buf);
         }
         for (int i = 0; i < NUM_SCK_THREAD; i++)
         {
             sem_post(&sem_msg[i]);
         }
-        
     }
-
-    /* while (is_on && !landscape)
-    {
-        pthread_testcancel();
-        sleep(INTERVAL);
-        printf("Valor actual distancia %d combustible %d giro1 giro2 alarma= %d %d %d \n",
-               *distance, *gasoline, *gyros1, *gyros2, *alarma);
-    } */
 }
 
 void create_signals_gyros()
@@ -488,8 +481,9 @@ void *pricipal_engine_thread()
         perror("Error in set Thread Cancellation\n");
     }
     int sockfd = create_sck_sender();
-    char *msg = "Combustible: %d (%s)\n";
+    char *msg = "Combustible: %d\nMotor principal: %s - potencia %s\n";
     char *state;
+    char *potencia;
     while (is_on)
     {
         pthread_testcancel();
@@ -499,8 +493,10 @@ void *pricipal_engine_thread()
             sem_wait(&(sem_gs[i]));
         }
         sem_wait(&sem_gas);
+        potencia = "100";
         if (state_gyros[0] || state_gyros[1])
         {
+            potencia = "50";
             *gasoline += 0.5;
         }
         sem_post(&sem_gas);
@@ -509,9 +505,9 @@ void *pricipal_engine_thread()
             sem_post(&(sem_gs[i]));
         }
         state = princp_engine ? "ON" : "OFF";
-        int space = snprintf(NULL, 0, msg, *gasoline, state);
+        int space = snprintf(NULL, 0, msg, *gasoline, state, potencia);
         char *buffer = malloc(space);
-        snprintf(buffer, space, msg, *gasoline, state);
+        snprintf(buffer, space, msg, *gasoline, state, potencia);
         send_mesg(sockfd, buffer, space);
         free(buffer);
         sem_wait(&sem_msg[6]);
@@ -543,12 +539,15 @@ void *go_up_30m()
     {
         pthread_testcancel();
         sleep(INTERVAL);
+        sem_wait(&sem_dist);
         if (*distance < 30)
         {
             *distance += 2;
+            sem_post(&sem_dist);
         }
         else
         {
+            sem_post(&sem_dist);
             create_signals_gyros();
             //pthread_kill(array_threads_signals[2], SIGCONT);
             pause();
@@ -578,7 +577,9 @@ void *go_up_explode()
         sem_wait(&sem_gas);
         if (*gasoline > 5)
         {
+            sem_wait(&sem_dist);
             *distance += 2; //para compensar lo que resta el programa del profe
+            sem_post(&sem_dist);
         }
         else
         {
@@ -626,9 +627,15 @@ void *signal_gyro(void *arg)
     while (is_on)
     {
         pthread_testcancel();
+        sem_wait(&sem_dist);
         if (*distance <= 5)
         {
+            sem_post(&sem_dist);
             break;
+        }
+        else
+        {
+            sem_post(&sem_dist);
         }
         sleep(INTERVAL);
         state = "OFF";
@@ -680,16 +687,21 @@ void *signal_restart_landing()
     {
         pthread_testcancel();
         sleep(INTERVAL);
+        sem_wait(&sem_dist);
         if (
             *distance < 5 &&
             (*gyros1 != 0 || *gyros2 != 0))
         {
+            sem_post(&sem_dist);
             terminate_event_1();
             manage_principal_engine(0);
             pthread_kill(array_threads[3], SIGCONT);
             send_mesg(sockfd, msg, sizeof(msg));
             sem_wait(&sem_msg[1]);
             //pause();
+        } else
+        {
+            sem_post(&sem_dist);
         }
     }
 }
@@ -762,7 +774,10 @@ void *signal_landing_check()
     {
         pthread_testcancel();
         sleep(INTERVAL);
-        if (*distance == 0 &&
+        sem_wait(&sem_dist);
+        int dist = *distance;
+        sem_post(&sem_dist);
+        if (dist == 0 &&
             *gyros1 == 0 && *gyros2 == 0)
         {
             is_on = 0;
@@ -774,7 +789,7 @@ void *signal_landing_check()
         }
         act = "";
         if (
-            *distance <= 1 &&
+            dist <= 1 &&
             (*gyros1 == 0 ||
              *gyros2 == 0))
         {
@@ -783,9 +798,10 @@ void *signal_landing_check()
             pthread_kill(array_threads[2], SIGTSTP);
             act = "- apagando propulsores";
         }
-        int space = snprintf(NULL, 0, msg, *distance, act);
+        
+        int space = snprintf(NULL, 0, msg, dist, act);
         char *buffer = malloc(space);
-        snprintf(buffer, space, msg, *distance, act);
+        snprintf(buffer, space, msg, dist, act);
         send_mesg(sockfd, buffer, space);
         free(buffer);
         sem_wait(&sem_msg[3]);
