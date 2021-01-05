@@ -39,7 +39,7 @@ typedef struct arg_gyros
 } arg_gyros;
 
 //GLOBAL VARIABLES
-int CURRENT_ACTION = 0;
+int CURRENT_ACTION = 1;
 int INTERVAL = 1;
 int manual_explote = 0;
 int last_alamra = 0;
@@ -104,7 +104,6 @@ int main(int argc, char *argv[])
     if (signal(SIGINT, sig_handler_main) == SIG_ERR)
         printf("\nCan't catch SIGINT\n");
 
-    CURRENT_ACTION = 1;
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
     inet_pton(AF_INET, "255.255.255.255", &broadcastAddr.sin_addr);
@@ -694,11 +693,13 @@ void *signal_gyro(void *arg)
         pthread_testcancel();
         sleep(INTERVAL);
         state = "OFF";
+        sem_wait(&sem_action);
         if (
             CURRENT_ACTION == 1 &&
             *(info->men_gyro)
         )
         {
+            sem_post(&sem_action);
             state = "ON - iniciando correcciones";
             int res, err;
             if (pthread_kill(array_threads[info->id], SIGCONT) != 0)
@@ -706,6 +707,7 @@ void *signal_gyro(void *arg)
                 printf("Error\n");
             }
         }
+        sem_post(&sem_action);
         int space = snprintf(NULL, 0, msg, info->id, *(info->men_gyro), state);
         char *buffer = malloc(space);
         snprintf(buffer, space, msg, info->id, *(info->men_gyro), state);
@@ -746,11 +748,13 @@ void *signal_restart_landing()
         pthread_testcancel();
         sleep(INTERVAL);
         sem_wait(&sem_dist);
+        sem_wait(&sem_action);
         if (
             CURRENT_ACTION != 4 &&
             *distance < 5 &&
             (*gyros1 != 0 || *gyros2 != 0))
         {
+            sem_post(&sem_action);
             change_action(3);
             sem_post(&sem_dist);
             terminate_event_1(0);
@@ -761,6 +765,7 @@ void *signal_restart_landing()
         }
         else
         {
+            sem_post(&sem_action);
             sem_post(&sem_dist);
             send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
             sem_wait(&sem_msg[2]);
@@ -804,12 +809,15 @@ void *signal_explote_rocket()
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
         }
-        else if(CURRENT_ACTION == 4){
+        sem_wait(&sem_action);
+        if(CURRENT_ACTION == 4){
+            sem_post(&sem_action);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
         }
         else
         {
+            sem_post(&sem_action);
             send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
             sem_wait(&sem_msg[3]);
         }
