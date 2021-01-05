@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#define BUFF_MSG 9999
+#define BUFF_MSG 999999
 #define NUM 5
 #define SHMSZ 4
 #define MAXTRY 32
@@ -47,8 +47,10 @@ int newprio = 1;
 sem_t sem_gas;
 sem_t sem_sock;
 sem_t sem_dist;
+int c_sck = 0;
 sem_t sem_gs[NUM_GYROS];
 sem_t sem_msg[NUM_SCK_THREAD];
+int array_socks[NUM_SCK_THREAD];
 int is_on = 1;
 int shmid[NUM];
 int landscape = 0;
@@ -77,6 +79,7 @@ void create_pe_thread();
 void create_rest_thread();
 void create_explo_thread();
 void create_land_thread();
+void sig_handler_main(int signo);
 void sig_handler_threads(int signo);
 void create_signal_manual();
 int create_sck_sender();
@@ -95,6 +98,9 @@ void *sig_handler_manual();
 //IMPLEMETATION
 int main(int argc, char *argv[])
 {
+    if (signal(SIGINT, sig_handler_main) == SIG_ERR)
+        printf("\nCan't catch SIGINT\n");
+
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
     inet_pton(AF_INET, "255.255.255.255", &broadcastAddr.sin_addr);
@@ -132,8 +138,8 @@ int main(int argc, char *argv[])
 
     // set timeout to 2 seconds.
     struct timeval timeV;
-    timeV.tv_sec = 2;
-    timeV.tv_usec = 0;
+    timeV.tv_sec = 0;
+    timeV.tv_usec = 1000;
 
     if (setsockopt(listeningSocket, SOL_SOCKET, SO_RCVTIMEO, &timeV, sizeof(timeV)) == -1)
     {
@@ -171,7 +177,7 @@ int main(int argc, char *argv[])
     create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
     create_land_thread();  //
     create_signal_manual();
-
+    int msg_read = 0;
     while (is_on && !landscape)
     {
         for (int i = 0; i < NUM_SCK_THREAD; i++)
@@ -180,16 +186,47 @@ int main(int argc, char *argv[])
             ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&receiveSockaddr, &receiveSockaddrLen);
             if (result > 0)
             {
-                printf("SSIZE %ld MSG: %s\n", result, buf);
+                printf("--> %s\n", buf);
+                ++msg_read;
             }
-
             free(buf);
         }
-        for (int i = 0; i < NUM_SCK_THREAD; i++)
+        if (msg_read == NUM_SCK_THREAD)
         {
-            sem_post(&sem_msg[i]);
+            msg_read = 0;
+            printf("*------------------------------------------*\n");
+            for (int i = 0; i < NUM_SCK_THREAD; i++)
+            {
+                sem_post(&sem_msg[i]);
+            }
         }
     }
+}
+
+void terminte_program()
+{
+    //cerrar bloques de memoria y sockets
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        pthread_cancel(array_threads[i]);
+    }
+    printf("\nHilos slaves finalizados\n");
+    for (int i = 0; i < NUM_THREADS_SIGNALS; i++)
+    {
+        pthread_cancel(array_threads_signals[i]);
+    }
+    printf("Hilos masters finalizados\n");
+    for (int i = 0; i < NUM_SCK_THREAD; i++)
+    {
+        close(array_socks[i]);
+    }
+    printf("Sockets cerrados\n");
+    for (int i = 0; i < NUM; i++)
+    {
+        close(shmid[i]);
+    }
+    printf("Bloques de memoria cerrados\n");
+    exit(1);
 }
 
 void create_signals_gyros()
@@ -352,6 +389,14 @@ void sig_handler_threads(int signo)
     return;
 }
 
+void sig_handler_main(int signo)
+{
+    if (signo == SIGINT)
+    {
+        terminte_program();
+    }
+}
+
 int create_sck_sender()
 {
     int socketSD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -370,17 +415,18 @@ int create_sck_sender()
         close(socketSD);
         return -1;
     }
+    array_socks[c_sck++] = socketSD;
     return socketSD;
 }
 
 void send_mesg(int sckfd, char *msg, int len_msg)
 {
-
-    int numsec;
+    
     sem_wait(&sem_sock);
+    int numsec;
     for (numsec = 1; numsec <= MAXTRY; numsec <<= 1)
     {
-        int ret_send = sendto(sckfd, msg, strlen(msg), 0, (struct sockaddr *)&broadcastAddr, sizeof(broadcastAddr));
+        int ret_send = sendto(sckfd, msg, len_msg, 0, (struct sockaddr *)&broadcastAddr, sizeof(broadcastAddr));
         if (ret_send > 0)
         {
             break;
@@ -481,7 +527,7 @@ void *pricipal_engine_thread()
         perror("Error in set Thread Cancellation\n");
     }
     int sockfd = create_sck_sender();
-    char *msg = "Combustible: %d\nMotor principal: %s - potencia %s\n";
+    char *msg = "Combustible: %d\n--> Motor principal: %s - potencia %s\n";
     char *state;
     char *potencia;
     while (is_on)
@@ -654,7 +700,7 @@ void *signal_gyro(void *arg)
         snprintf(buffer, space, msg, info->id, *(info->men_gyro), state);
         send_mesg(sockfd, buffer, space);
         free(buffer);
-        sem_wait(&sem_msg[0]);
+        sem_wait(&sem_msg[info->id]);
     }
 }
 
@@ -682,7 +728,8 @@ void *signal_restart_landing()
         perror("Error in set Thread Cancellation\n");
     }
     int sockfd = create_sck_sender();
-    char *msg = "Reiniciando aterrizaje (subiendo a 30 metros)\n";
+    char *msg = "Reiniciando aterrizaje";
+    char *msg_alt = "Aterrizaje en curso";
     while (is_on)
     {
         pthread_testcancel();
@@ -696,12 +743,15 @@ void *signal_restart_landing()
             terminate_event_1();
             manage_principal_engine(0);
             pthread_kill(array_threads[3], SIGCONT);
-            send_mesg(sockfd, msg, sizeof(msg));
-            sem_wait(&sem_msg[1]);
+            send_mesg(sockfd, msg, strlen(msg) + 1);
+            sem_wait(&sem_msg[2]);
             //pause();
-        } else
+        }
+        else
         {
             sem_post(&sem_dist);
+            send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
+            sem_wait(&sem_msg[2]);
         }
     }
 }
@@ -726,7 +776,8 @@ void *signal_explote_rocket()
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     int sockfd = create_sck_sender();
-    char *msg = "Abortando aterrizaje\n";
+    char *msg = "Abortando aterrizaje";
+    char *msg_alt = "Sin aborto de aterrizaje";
     while (is_on)
     {
         pthread_testcancel();
@@ -737,9 +788,14 @@ void *signal_explote_rocket()
             terminate_event_1();
             terminate_event_3();
             pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
-            send_mesg(sockfd, msg, sizeof(msg));
-            sem_wait(&sem_msg[2]);
+            send_mesg(sockfd, msg, strlen(msg) + 1);
+            sem_wait(&sem_msg[3]);
             break;
+        }
+        else
+        {
+            send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
+            sem_wait(&sem_msg[3]);
         }
     }
 }
@@ -798,13 +854,13 @@ void *signal_landing_check()
             pthread_kill(array_threads[2], SIGTSTP);
             act = "- apagando propulsores";
         }
-        
+
         int space = snprintf(NULL, 0, msg, dist, act);
         char *buffer = malloc(space);
         snprintf(buffer, space, msg, dist, act);
         send_mesg(sockfd, buffer, space);
         free(buffer);
-        sem_wait(&sem_msg[3]);
+        sem_wait(&sem_msg[4]);
     }
 }
 
@@ -829,6 +885,7 @@ void *sig_handler_manual()
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     int sockfd = create_sck_sender();
     char *msg;
+    char *msg_alt = "Sin alarmas";
     while (is_on)
     {
         pthread_testcancel();
@@ -839,29 +896,33 @@ void *sig_handler_manual()
             {
                 manage_principal_engine(1);
                 restart_thrusters();
-                msg = "Reiniciando todos los propulsores\n";
-                send_mesg(sockfd, msg, sizeof(msg));
+                msg = "Reiniciando todos los propulsores";
+                send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 102)
             {
                 manage_principal_engine(1);
-                msg = "Reiniciando propulsor principal\n";
-                send_mesg(sockfd, msg, sizeof(msg));
+                msg = "Reiniciando propulsor principal";
+                send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 103)
             {
                 restart_thrusters();
-                msg = "Reiniciando propulsores de orientación\n";
-                send_mesg(sockfd, msg, sizeof(msg));
+                msg = "Reiniciando propulsores de orientación";
+                send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 104)
             {
                 manual_explote = 1;
-                msg = "Iniciando secuencia de autodestrucción\n";
-                send_mesg(sockfd, msg, sizeof(msg));
+                msg = "Iniciando secuencia de autodestrucción";
+                send_mesg(sockfd, msg, strlen(msg) + 1);
                 break;
             }
             last_alamra = *alarma;
+        }
+        else
+        {
+            send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
         }
         sem_wait(&sem_msg[5]);
     }
