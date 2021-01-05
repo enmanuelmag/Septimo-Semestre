@@ -39,6 +39,7 @@ typedef struct arg_gyros
 } arg_gyros;
 
 //GLOBAL VARIABLES
+int CURRENT_ACTION = 0;
 int INTERVAL = 1;
 int manual_explote = 0;
 int last_alamra = 0;
@@ -47,6 +48,7 @@ int newprio = 1;
 sem_t sem_gas;
 sem_t sem_sock;
 sem_t sem_dist;
+sem_t sem_action;
 int c_sck = 0;
 sem_t sem_gs[NUM_GYROS];
 sem_t sem_msg[NUM_SCK_THREAD];
@@ -69,10 +71,10 @@ struct sockaddr_in broadcastAddr;
 void handle_cod_101();
 void handle_cod_102();
 void handle_cod_103();
-void terminate_event_1();
-void terminate_event_3();
+void terminate_event_1(int all);
+void terminate_event_3(int all);
 void restart_thrusters();
-void create_signals_gyros();
+void create_signals_gyros(int all);
 int init_shared_memory(void);
 void restart_principal_engine();
 void create_pe_thread();
@@ -83,6 +85,7 @@ void sig_handler_main(int signo);
 void sig_handler_threads(int signo);
 void create_signal_manual();
 int create_sck_sender();
+void change_action(int new_action);
 
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
@@ -101,6 +104,7 @@ int main(int argc, char *argv[])
     if (signal(SIGINT, sig_handler_main) == SIG_ERR)
         printf("\nCan't catch SIGINT\n");
 
+    CURRENT_ACTION = 1;
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
     inet_pton(AF_INET, "255.255.255.255", &broadcastAddr.sin_addr);
@@ -115,6 +119,7 @@ int main(int argc, char *argv[])
     sem_init(&sem_gas, 0, 1);
     sem_init(&sem_sock, 0, 1);
     sem_init(&sem_dist, 0, 1);
+    sem_init(&sem_action, 0, 1);
     for (int i = 0; i < NUM_SCK_THREAD; i++)
     {
         sem_init(&sem_msg[i], 0, 0);
@@ -139,7 +144,7 @@ int main(int argc, char *argv[])
     // set timeout to 2 seconds.
     struct timeval timeV;
     timeV.tv_sec = 0;
-    timeV.tv_usec = 1000;
+    timeV.tv_usec = 500;
 
     if (setsockopt(listeningSocket, SOL_SOCKET, SO_RCVTIMEO, &timeV, sizeof(timeV)) == -1)
     {
@@ -170,7 +175,7 @@ int main(int argc, char *argv[])
     struct sockaddr_in receiveSockaddr;
     socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
 
-    create_signals_gyros(); //gyroscope_thread check
+    create_signals_gyros(1); //gyroscope_thread check
 
     create_pe_thread();    //check
     create_rest_thread();  //hijo go_up_30m check
@@ -203,6 +208,14 @@ int main(int argc, char *argv[])
     }
 }
 
+void change_action(int new_action)
+{
+    sem_wait(&sem_action);
+    CURRENT_ACTION = new_action;
+    sem_post(&sem_action);
+
+}
+
 void terminte_program()
 {
     //cerrar bloques de memoria y sockets
@@ -229,7 +242,7 @@ void terminte_program()
     exit(1);
 }
 
-void create_signals_gyros()
+void create_signals_gyros(int all)
 {
     for (int i = 0; i < NUM_GYROS; i++)
     {
@@ -246,14 +259,11 @@ void create_signals_gyros()
         state_gyros[i] = 0;
         arg->on_gyro = &(state_gyros[i]);
 
-        int res;
-        res = pthread_create(&array_threads_signals[i], &tattr, signal_gyro, arg);
-        if (res != 0)
+        if (all)
         {
-            perror("Creation of thread failed");
-            exit(EXIT_FAILURE);
+            pthread_create(&array_threads_signals[i], &tattr, signal_gyro, arg);
         }
-        res = pthread_create(&array_threads[i], NULL, gyroscope_thread, arg);
+        pthread_create(&array_threads[i], NULL, gyroscope_thread, arg);
     }
 }
 
@@ -338,18 +348,26 @@ void create_signal_manual()
     pthread_create(&array_threads_signals[4], &tattr_land, sig_handler_manual, NULL);
 }
 
-void terminate_event_1()
+void terminate_event_1(int all)
 {
     pthread_cancel(array_threads[0]);
     pthread_cancel(array_threads[1]);
-    pthread_cancel(array_threads_signals[0]);
-    pthread_cancel(array_threads_signals[1]);
+    if (all == 1)
+    {
+        pthread_cancel(array_threads_signals[0]);
+        pthread_cancel(array_threads_signals[1]);
+    }
+    
 }
 
-void terminate_event_3()
+void terminate_event_3(int all)
 {
     pthread_cancel(array_threads[3]);
-    pthread_cancel(array_threads_signals[2]);
+    if (all == 1)
+    {
+        pthread_cancel(array_threads_signals[2]);
+    }
+    
 }
 
 void manage_principal_engine(int force_restart)
@@ -370,8 +388,8 @@ void manage_principal_engine(int force_restart)
 
 void restart_thrusters()
 {
-    terminate_event_1();
-    create_signals_gyros();
+    terminate_event_1(1);
+    create_signals_gyros(1);
 }
 
 void sig_handler_threads(int signo)
@@ -491,6 +509,7 @@ void *gyroscope_thread(void *arg)
         }
         else
         {
+            *on_gyro = 0;
             sem_post(&sem_gyro);
             //pthread_kill(array_threads_signals[info->id], SIGCONT);
             pause();
@@ -593,9 +612,10 @@ void *go_up_30m()
         }
         else
         {
+            printf("termine\n");
             sem_post(&sem_dist);
-            create_signals_gyros();
-            //pthread_kill(array_threads_signals[2], SIGCONT);
+            create_signals_gyros(0);
+            change_action(1);
             pause();
         }
     }
@@ -630,13 +650,12 @@ void *go_up_explode()
         else
         {
             is_on = 0;
-            pthread_cancel(array_threads[2]);
-            pthread_cancel(main_id);
             break;
         }
         sem_post(&sem_gas);
     }
     printf("ROCKET HAS BEEN EXPLOTE!\n");
+    pthread_kill(main_id, SIGINT);
 }
 
 //Thread routines for check singnals
@@ -673,19 +692,12 @@ void *signal_gyro(void *arg)
     while (is_on)
     {
         pthread_testcancel();
-        sem_wait(&sem_dist);
-        if (*distance <= 5)
-        {
-            sem_post(&sem_dist);
-            break;
-        }
-        else
-        {
-            sem_post(&sem_dist);
-        }
         sleep(INTERVAL);
         state = "OFF";
-        if (*(info->men_gyro))
+        if (
+            CURRENT_ACTION == 1 &&
+            *(info->men_gyro)
+        )
         {
             state = "ON - iniciando correcciones";
             int res, err;
@@ -693,7 +705,6 @@ void *signal_gyro(void *arg)
             {
                 printf("Error\n");
             }
-            //pause();
         }
         int space = snprintf(NULL, 0, msg, info->id, *(info->men_gyro), state);
         char *buffer = malloc(space);
@@ -736,16 +747,17 @@ void *signal_restart_landing()
         sleep(INTERVAL);
         sem_wait(&sem_dist);
         if (
+            CURRENT_ACTION != 4 &&
             *distance < 5 &&
             (*gyros1 != 0 || *gyros2 != 0))
         {
+            change_action(3);
             sem_post(&sem_dist);
-            terminate_event_1();
+            terminate_event_1(0);
             manage_principal_engine(0);
             pthread_kill(array_threads[3], SIGCONT);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[2]);
-            //pause();
         }
         else
         {
@@ -784,13 +796,17 @@ void *signal_explote_rocket()
         sleep(INTERVAL);
         if (*gasoline < 10 || manual_explote)
         {
+            change_action(4);
             manage_principal_engine(0);
-            terminate_event_1();
-            terminate_event_3();
+            terminate_event_1(0);
+            terminate_event_3(0);
             pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
-            break;
+        }
+        else if(CURRENT_ACTION == 4){
+            send_mesg(sockfd, msg, strlen(msg) + 1);
+            sem_wait(&sem_msg[3]);
         }
         else
         {
@@ -837,10 +853,9 @@ void *signal_landing_check()
             *gyros1 == 0 && *gyros2 == 0)
         {
             is_on = 0;
-            terminate_event_3();
-            pthread_cancel(array_threads_signals[3]);
-            pthread_cancel(main_id);
-            printf("SUCCESSFUL LANDING\n");
+            //terminate_event_3();
+            //pthread_cancel(array_threads_signals[3]);
+            //pthread_cancel(main_id);
             break;
         }
         act = "";
@@ -849,7 +864,8 @@ void *signal_landing_check()
             (*gyros1 == 0 ||
              *gyros2 == 0))
         {
-            terminate_event_1();
+            change_action(5);
+            terminate_event_1(0);
             princp_engine = 0;
             pthread_kill(array_threads[2], SIGTSTP);
             act = "- apagando propulsores";
@@ -862,6 +878,8 @@ void *signal_landing_check()
         free(buffer);
         sem_wait(&sem_msg[4]);
     }
+    printf("SUCCESSFUL LANDING\n");
+    pthread_kill(main_id, SIGINT);
 }
 
 void *sig_handler_manual()
