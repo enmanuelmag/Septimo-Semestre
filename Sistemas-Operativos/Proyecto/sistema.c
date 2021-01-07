@@ -14,12 +14,17 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-
+//TODO fucnion para crear hilo go eplote con afnnida y cpu core
 #define BUFF_MSG 999999
 #define NUM 5
 #define SHMSZ 4
 #define MAXTRY 32
+#define EVENT_1 1 //aterrizaje
+#define EVENT_3 3 //reiniciando el aterrizaje
+#define EVENT_4 4 //explotar cohete
+#define EVENT_5 5 //apagando propulsores
 #define NUM_GYROS 2
+#define RATE_GO_UP 6
 #define CPU_CORES 4
 #define NUM_EVENTS 3
 #define SHM_ADDR 233
@@ -39,7 +44,7 @@ typedef struct arg_gyros
 } arg_gyros;
 
 //GLOBAL VARIABLES
-int CURRENT_ACTION = 1;
+int CURRENT_ACTION = EVENT_1;
 int INTERVAL = 1;
 int manual_explote = 0;
 int last_alamra = 0;
@@ -58,7 +63,7 @@ int shmid[NUM];
 int landscape = 0;
 int princp_engine = 1;
 int state_gyros[NUM_GYROS];
-int *param[NUM], *distance, *gasoline, *gyros1, *gyros2, *alarma;
+int *param[NUM], distance, *dit_block, gasoline, *gyros1, *gyros2, *alarma;
 
 arg_gyros array_gyros[NUM_GYROS];
 pthread_t main_id;
@@ -165,17 +170,15 @@ int main(int argc, char *argv[])
     if (status == -1)
     {
         close(listeningSocket);
-        printf("Error: listenForPackets - bind() failed.\n");
+        printf("Error: listenForPackets - bind() failed. Server\n");
         //closeall
         return -1;
     }
-
     // receive
     struct sockaddr_in receiveSockaddr;
     socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
 
     create_signals_gyros(1); //gyroscope_thread check
-
     create_pe_thread();    //check
     create_rest_thread();  //hijo go_up_30m check
     create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
@@ -204,6 +207,7 @@ int main(int argc, char *argv[])
                 sem_post(&sem_msg[i]);
             }
         }
+        //printf("main\n");
     }
 }
 
@@ -258,7 +262,7 @@ void create_signals_gyros(int all)
         state_gyros[i] = 0;
         arg->on_gyro = &(state_gyros[i]);
 
-        if (all)
+        if (all == 1)
         {
             pthread_create(&array_threads_signals[i], &tattr, signal_gyro, arg);
         }
@@ -282,8 +286,9 @@ int init_shared_memory(void)
             return (-1);
         }
     }
-    distance = param[0];
-    gasoline = param[1];
+    dit_block = param[0];
+    distance = *param[0];
+    gasoline = *param[1];
     gyros1 = param[2];
     gyros2 = param[3];
     alarma = param[4];
@@ -493,15 +498,15 @@ void *gyroscope_thread(void *arg)
         {
             *on_gyro = 1;
             sem_wait(&sem_gas);
-            *gasoline -= 1;
+            gasoline -= 1;
             sem_post(&sem_gas);
             if (*dir_gyros > 0)
             {
-                *dir_gyros -= 0.5;
+                *dir_gyros -= 1;
             }
             else
             {
-                *dir_gyros += 0.5;
+                *dir_gyros += 1;
             }
             sem_post(&sem_gyro);
             sleep(INTERVAL);
@@ -552,26 +557,48 @@ void *pricipal_engine_thread()
     {
         pthread_testcancel();
         sleep(INTERVAL);
+        sem_wait(&sem_dist);
+        sem_wait(&sem_action);
+        if (CURRENT_ACTION != EVENT_3 ||
+            CURRENT_ACTION != EVENT_4)
+        {
+            distance -= 1;
+            *dit_block = distance;
+        }
         for (int i = 0; i < NUM_GYROS; i++)
         {
             sem_wait(&(sem_gs[i]));
         }
         sem_wait(&sem_gas);
-        potencia = "100";
-        if (state_gyros[0] || state_gyros[1])
+        
+        if (CURRENT_ACTION == EVENT_3 ||
+            CURRENT_ACTION == EVENT_4
+        )
         {
-            potencia = "50";
-            *gasoline += 0.5;
+            potencia = "acelerando";
+            gasoline -= 5;
+        }
+        else if (state_gyros[0] || state_gyros[1])
+        {
+            potencia = "desacelerando";
+            gasoline -= 0.5;
+        }
+        else {
+            potencia = "normal";
+            gasoline -= 1;
         }
         sem_post(&sem_gas);
         for (int i = 0; i < NUM_GYROS; i++)
         {
             sem_post(&(sem_gs[i]));
         }
+        sem_post(&sem_dist);
+        sem_post(&sem_action);
+        
         state = princp_engine ? "ON" : "OFF";
-        int space = snprintf(NULL, 0, msg, *gasoline, state, potencia);
+        int space = snprintf(NULL, 0, msg, gasoline, state, potencia);
         char *buffer = malloc(space);
-        snprintf(buffer, space, msg, *gasoline, state, potencia);
+        snprintf(buffer, space, msg, gasoline, state, potencia);
         send_mesg(sockfd, buffer, space);
         free(buffer);
         sem_wait(&sem_msg[6]);
@@ -599,22 +626,24 @@ void *go_up_30m()
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     pause();
+    int time = 0;
     while (is_on)
     {
         pthread_testcancel();
         sleep(INTERVAL);
         sem_wait(&sem_dist);
-        if (*distance < 30)
+        if (time < 5)
         {
-            *distance += 2;
+            distance += RATE_GO_UP;
+            ++time;
             sem_post(&sem_dist);
         }
         else
         {
-            printf("termine\n");
+            time = 0;
             sem_post(&sem_dist);
             create_signals_gyros(0);
-            change_action(1);
+            change_action(EVENT_1);
             pause();
         }
     }
@@ -637,13 +666,14 @@ void *go_up_explode()
     rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     while (is_on)
     {
+        printf("sgskdkm\n");
         pthread_testcancel();
         sleep(INTERVAL);
         sem_wait(&sem_gas);
-        if (*gasoline > 5)
+        if (gasoline > 5)
         {
             sem_wait(&sem_dist);
-            *distance += 2; //para compensar lo que resta el programa del profe
+            distance += 1; //para compensar lo que resta el programa del profe
             sem_post(&sem_dist);
         }
         else
@@ -653,8 +683,6 @@ void *go_up_explode()
         }
         sem_post(&sem_gas);
     }
-    printf("ROCKET HAS BEEN EXPLOTE!\n");
-    pthread_kill(main_id, SIGINT);
 }
 
 //Thread routines for check singnals
@@ -691,11 +719,10 @@ void *signal_gyro(void *arg)
     while (is_on)
     {
         pthread_testcancel();
-        sleep(INTERVAL);
         state = "OFF";
         sem_wait(&sem_action);
         if (
-            CURRENT_ACTION == 1 &&
+            CURRENT_ACTION == EVENT_1 &&
             *(info->men_gyro)
         )
         {
@@ -746,16 +773,15 @@ void *signal_restart_landing()
     while (is_on)
     {
         pthread_testcancel();
-        sleep(INTERVAL);
         sem_wait(&sem_dist);
         sem_wait(&sem_action);
         if (
-            CURRENT_ACTION != 4 &&
-            *distance < 5 &&
+            CURRENT_ACTION != EVENT_4 &&
+            distance < 5 &&
             (*gyros1 != 0 || *gyros2 != 0))
         {
             sem_post(&sem_action);
-            change_action(3);
+            change_action(EVENT_3);
             sem_post(&sem_dist);
             terminate_event_1(0);
             manage_principal_engine(0);
@@ -798,19 +824,21 @@ void *signal_explote_rocket()
     while (is_on)
     {
         pthread_testcancel();
-        sleep(INTERVAL);
-        if (*gasoline < 10 || manual_explote)
+        if (gasoline < 10 || manual_explote)
         {
-            change_action(4);
-            manage_principal_engine(0);
-            terminate_event_1(0);
-            terminate_event_3(0);
-            pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
+            manual_explote = 0;
+            //change_action(4);
+            //manage_principal_engine(0);
+            //terminate_event_1(0);
+            //terminate_event_3(0);
+            //pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
+            printf("ROCKET HAS BEEN EXPLOTE!\n");
+            pthread_kill(main_id, SIGINT);
         }
         sem_wait(&sem_action);
-        if(CURRENT_ACTION == 4){
+        if(CURRENT_ACTION == EVENT_4){
             sem_post(&sem_action);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
@@ -853,11 +881,10 @@ void *signal_landing_check()
     while (is_on)
     {
         pthread_testcancel();
-        sleep(INTERVAL);
         sem_wait(&sem_dist);
-        int dist = *distance;
+        int dist = distance;
         sem_post(&sem_dist);
-        if (dist == 0 &&
+        if (dist <= 0 &&
             *gyros1 == 0 && *gyros2 == 0)
         {
             is_on = 0;
@@ -872,10 +899,10 @@ void *signal_landing_check()
             (*gyros1 == 0 ||
              *gyros2 == 0))
         {
-            change_action(5);
+            change_action(EVENT_5);
             terminate_event_1(0);
             princp_engine = 0;
-            pthread_kill(array_threads[2], SIGTSTP);
+            //pthread_kill(array_threads[2], SIGTSTP);
             act = "- apagando propulsores";
         }
 
@@ -915,7 +942,6 @@ void *sig_handler_manual()
     while (is_on)
     {
         pthread_testcancel();
-        sleep(INTERVAL);
         if (last_alamra != *alarma)
         {
             if (*alarma == 101)
@@ -939,10 +965,11 @@ void *sig_handler_manual()
             }
             else if (*alarma == 104)
             {
-                manual_explote = 1;
+                //manual_explote = 1;
                 msg = "Iniciando secuencia de autodestrucción";
                 send_mesg(sockfd, msg, strlen(msg) + 1);
-                break;
+                printf("ROCKET HAS BEEN EXPLOTE!\n");
+                pthread_kill(main_id, SIGINT);
             }
             last_alamra = *alarma;
         }
