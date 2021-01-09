@@ -188,3 +188,9 @@ en este esuqema solo existe una talba de pagina para todo el sistema, cada entra
 ![](../assets/page5.png)
 
 (Se comapra el par pid, page numer <pid,p>)
+
+Although this scheme decreases the amount of memory needed to store
+each page table, it increases the amount of time needed to search the table when
+a page reference occurs. Because the inverted page table is sorted by physical
+address, but lookups occur on virtual addresses, the whole table might need
+to be searched before a match is found.
