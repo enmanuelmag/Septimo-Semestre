@@ -50,6 +50,8 @@ int manual_explote = 0;
 int last_alamra = 0;
 int ret;
 int newprio = 1;
+int msg_read = 0;
+sem_t sem_read;
 sem_t sem_gas;
 sem_t sem_sock;
 sem_t sem_dist;
@@ -120,6 +122,7 @@ int main(int argc, char *argv[])
         sem_init(&(sem_gs[i]), 0, 1);
     }
 
+    sem_init(&sem_read, 0, 1);
     sem_init(&sem_gas, 0, 1);
     sem_init(&sem_sock, 0, 1);
     sem_init(&sem_dist, 0, 1);
@@ -137,7 +140,7 @@ int main(int argc, char *argv[])
 
     printf("Init...\n");
 
-    int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    /* int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (listeningSocket <= 0)
     {
         printf("Error: listenForPackets - socket() failed.\n");
@@ -176,7 +179,7 @@ int main(int argc, char *argv[])
     }
     // receive
     struct sockaddr_in receiveSockaddr;
-    socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
+    socklen_t receiveSockaddrLen = sizeof(receiveSockaddr); */
 
     create_signals_gyros(1); //gyroscope_thread check
     create_pe_thread();    //check
@@ -184,10 +187,10 @@ int main(int argc, char *argv[])
     create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
     create_land_thread();  //
     create_signal_manual();
-    int msg_read = 0;
+    
     while (is_on && !landscape)
     {
-        for (int i = 0; i < NUM_SCK_THREAD; i++)
+        /* for (int i = 0; i < NUM_SCK_THREAD; i++)
         {
             char *buf = malloc(BUFF_MSG);
             ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&receiveSockaddr, &receiveSockaddrLen);
@@ -197,16 +200,18 @@ int main(int argc, char *argv[])
                 ++msg_read;
             }
             free(buf);
-        }
+        } */
+        sem_wait(&sem_read);
         if (msg_read == NUM_SCK_THREAD)
         {
             msg_read = 0;
-            printf("*------------------------------------------*\n");
+            //printf("*------------------------------------------*\n");
             for (int i = 0; i < NUM_SCK_THREAD; i++)
             {
                 sem_post(&sem_msg[i]);
             }
         }
+        sem_post(&sem_read);
         //printf("main\n");
     }
 }
@@ -458,6 +463,9 @@ void send_mesg(int sckfd, char *msg, int len_msg)
             sleep(numsec);
         }
     }
+    sem_wait(&sem_read);
+    ++msg_read;
+    sem_post(&sem_read);
     sem_post(&sem_sock);
 }
 //Thread routines for corrections in rocket

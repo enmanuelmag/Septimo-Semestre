@@ -20,9 +20,31 @@
 
 sem_t sem_msg[NUM_SCK_THREAD];
 
+int create_sck_sender()
+{
+    int socketSD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketSD <= 0)
+    {
+        printf("Error: Could not open socket.\n");
+        return -1;
+    }
+
+    // set socket options enable broadcast
+    int broadcastEnable = 1;
+    int ret_create = setsockopt(socketSD, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+    if (ret_create)
+    {
+        printf("Error: Could not open set socket to broadcast mode\n");
+        close(socketSD);
+        return -1;
+    }
+    //array_socks[c_sck++] = socketSD;
+    return socketSD;
+}
+
 int main()
 {
-    int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    /* int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (listeningSocket <= 0)
     {
         printf("Error: listenForPackets - socket() failed.\n");
@@ -63,20 +85,48 @@ int main()
     // receive
     struct sockaddr_in receiveSockaddr;
     socklen_t receiveSockaddrLen = sizeof(receiveSockaddr);
+    int msg_read = 0; */
+    struct sockaddr_in broadcastAddr;
+    memset(&broadcastAddr, 0, sizeof(broadcastAddr));
+    broadcastAddr.sin_family = AF_INET;
+    inet_pton(AF_INET, "255.255.255.255", &broadcastAddr.sin_addr);
+    broadcastAddr.sin_port = htons(8585);
+
+    int socketSD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketSD <= 0)
+    {
+        printf("Error: Could not open socket.\n");
+        return -1;
+    }
+
+    // set socket options enable broadcast
+    int broadcastEnable = 1;
+    int ret_create = setsockopt(socketSD, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+    if (ret_create)
+    {
+        printf("Error: Could not open set socket to broadcast mode\n");
+        close(socketSD);
+        return -1;
+    }
+    //array_socks[c_sck++] = socketSD;
+    socklen_t receiveSockaddrLen = sizeof(broadcastAddr);
+    int listeningSocket = create_sck_sender();
     int msg_read = 0;
     while (1)
     {
-        for (int i = 0; i < NUM_SCK_THREAD; i++)
+        char *buf = malloc(BUFF_MSG);
+        printf("hola\n");
+        ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&broadcastAddr, &receiveSockaddrLen);
+        printf("hola\n");
+        if (result > 0)
         {
-            char *buf = malloc(BUFF_MSG);
-            ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&receiveSockaddr, &receiveSockaddrLen);
-            if (result > 0)
-            {
-                printf("--> %s\n", buf);
-                ++msg_read;
-            }
-            free(buf);
+            printf("--> %s\n", buf);
+            ++msg_read;
         }
+        else {
+            printf("%ld\n", result);
+        }
+        free(buf);
         if (msg_read == NUM_SCK_THREAD)
         {
             msg_read = 0;
