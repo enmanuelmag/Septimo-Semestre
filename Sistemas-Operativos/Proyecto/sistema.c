@@ -94,7 +94,6 @@ int create_sck_sender(int idx);
 void change_action(int new_action);
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
-void *go_up_explode();
 void *signal_gyro(void *arg);
 void *signal_landing_check();
 void *signal_explote_rocket();
@@ -620,42 +619,6 @@ void *go_up_30m()
     }
 }
 
-void *go_up_explode()
-{
-    const pthread_t pid = pthread_self();
-    const int core_id = 3 % CPU_CORES;
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(core_id, &cpuset);
-    const int aff_result = pthread_setaffinity_np(pid, sizeof(cpu_set_t), &cpuset);
-    if (aff_result != 0)
-    {
-        printf(FAILURE_MSG, "ABORTAR (Gas 10)", 3, core_id);
-    }
-    int oldtype;
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
-    while (is_on)
-    {
-        printf("sgskdkm\n");
-        pthread_testcancel();
-        sleep(INTERVAL);
-        sem_wait(&sem_gas);
-        if (gasoline > 5)
-        {
-            sem_wait(&sem_dist);
-            distance += 1; //para compensar lo que resta el programa del profe
-            sem_post(&sem_dist);
-        }
-        else
-        {
-            is_on = 0;
-            break;
-        }
-        sem_post(&sem_gas);
-    }
-}
-
 //Thread routines for check singnals
 void *signal_gyro(void *arg)
 {
@@ -814,11 +777,6 @@ void *signal_explote_rocket()
         {
             sem_post(&sem_gas);
             manual_explote = 0;
-            //change_action(4);
-            //manage_principal_engine(0);
-            //terminate_event_1(0);
-            //terminate_event_3(0);
-            //pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
             printf("El cohete ha explotado!\n");
