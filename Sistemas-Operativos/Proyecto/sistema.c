@@ -14,6 +14,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/sysinfo.h>
 //TODO fucnion para crear hilo go eplote con afnnida y cpu core
 #define BUFF_MSG 999999
 #define NUM 5
@@ -25,16 +26,18 @@
 #define EVENT_5 5 //apagando propulsores
 #define NUM_GYROS 2
 #define RATE_GO_UP 6
-#define CPU_CORES 4
+#define MASTER_PRIO 1
+#define SLAVE_PRIO 3
 #define NUM_EVENTS 3
 #define SHM_ADDR 233
 #define NUM_THREADS 5
 #define NUM_SCK_THREAD 7
-#define NUM_THREADS_SIGNALS 5
+#define NUM_THREADS_SIGNALS 6
 #define SUCCESS_MSG "Hilo '%s %d' seteado en el CPU %d\n"
 #define FAILURE_MSG "Error al setear el hilo '%s %d' en CPU %d\n"
 
 //STRUCTURES
+struct sockaddr_in broadcastAddr;
 typedef struct arg_gyros
 {
     int id;
@@ -44,12 +47,12 @@ typedef struct arg_gyros
 } arg_gyros;
 
 //GLOBAL VARIABLES
+int CPU_CORES;
 int CURRENT_ACTION = EVENT_1;
 int INTERVAL = 1;
 int manual_explote = 0;
 int last_alamra = 0;
-int ret;
-int newprio = 1;
+//int MASTER_PRIO = 1;
 int msg_read = 0;
 sem_t sem_read;
 sem_t sem_gas;
@@ -72,12 +75,7 @@ pthread_t main_id;
 pthread_t array_threads[NUM_THREADS];
 pthread_t array_threads_signals[NUM_THREADS_SIGNALS];
 
-struct sockaddr_in broadcastAddr;
-
 //USER'S FUNCTIONS DEFINITION
-void handle_cod_101();
-void handle_cod_102();
-void handle_cod_103();
 void terminate_event_1(int all);
 void terminate_event_3(int all);
 void restart_thrusters();
@@ -85,15 +83,15 @@ void create_signals_gyros(int all);
 int init_shared_memory(void);
 void restart_principal_engine();
 void create_pe_thread();
+void terminte_program();
 void create_rest_thread();
 void create_explo_thread();
 void create_land_thread();
 void sig_handler_main(int signo);
 void sig_handler_threads(int signo);
 void create_signal_manual();
-int create_sck_sender();
+int create_sck_sender(int idx);
 void change_action(int new_action);
-
 //THREAD'S ROUTINES DEFINITION
 void *go_up_30m();
 void *go_up_explode();
@@ -110,6 +108,10 @@ int main(int argc, char *argv[])
 {
     if (signal(SIGINT, sig_handler_main) == SIG_ERR)
         printf("\nCan't catch SIGINT\n");
+
+    printf("Iniciando...\n");
+    CPU_CORES = get_nprocs();
+    printf("Su computador dispone de %d cores\n", CPU_CORES);
 
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
@@ -138,81 +140,25 @@ int main(int argc, char *argv[])
         printf("Error en init memory\n");
     }
 
-    printf("Init...\n");
-
-    /* int listeningSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (listeningSocket <= 0)
-    {
-        printf("Error: listenForPackets - socket() failed.\n");
-        //closeall
-        return -1;
-    }
-
-    // set timeout to 2 seconds.
-    struct timeval timeV;
-    timeV.tv_sec = 0;
-    timeV.tv_usec = 500;
-
-    if (setsockopt(listeningSocket, SOL_SOCKET, SO_RCVTIMEO, &timeV, sizeof(timeV)) == -1)
-    {
-        printf("Error: listenForPackets - setsockopt failed\n");
-        close(listeningSocket);
-        //closeall
-        return -1;
-    }
-
-    // bind the port
-    struct sockaddr_in sockaddr;
-    memset(&sockaddr, 0, sizeof(sockaddr));
-
-    sockaddr.sin_family = AF_INET;
-    sockaddr.sin_port = htons(8585);
-    sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    int status = bind(listeningSocket, (struct sockaddr *)&sockaddr, sizeof(sockaddr));
-    if (status == -1)
-    {
-        close(listeningSocket);
-        printf("Error: listenForPackets - bind() failed. Server\n");
-        //closeall
-        return -1;
-    }
-    // receive
-    struct sockaddr_in receiveSockaddr;
-    socklen_t receiveSockaddrLen = sizeof(receiveSockaddr); */
-
-    create_signals_gyros(1); //gyroscope_thread check
-    create_pe_thread();    //check
-    create_rest_thread();  //hijo go_up_30m check
-    create_explo_thread(); //hijo go_up_explode (el hijo si sera bajo demanda)
-    create_land_thread();  //
+    create_signals_gyros(1);
+    create_pe_thread();
+    create_rest_thread();
+    create_explo_thread();
+    create_land_thread();
     create_signal_manual();
-    
+
     while (is_on && !landscape)
     {
-        /* for (int i = 0; i < NUM_SCK_THREAD; i++)
-        {
-            char *buf = malloc(BUFF_MSG);
-            ssize_t result = recvfrom(listeningSocket, buf, BUFF_MSG, 0, (struct sockaddr *)&receiveSockaddr, &receiveSockaddrLen);
-            if (result > 0)
-            {
-                printf("--> %s\n", buf);
-                ++msg_read;
-            }
-            free(buf);
-        } */
         sem_wait(&sem_read);
         if (msg_read == NUM_SCK_THREAD)
         {
             msg_read = 0;
-            //printf("*------------------------------------------*\n");
             for (int i = 0; i < NUM_SCK_THREAD; i++)
             {
                 sem_post(&sem_msg[i]);
             }
         }
         sem_post(&sem_read);
-        //printf("main\n");
     }
 }
 
@@ -221,7 +167,6 @@ void change_action(int new_action)
     sem_wait(&sem_action);
     CURRENT_ACTION = new_action;
     sem_post(&sem_action);
-
 }
 
 void terminte_program()
@@ -230,16 +175,23 @@ void terminte_program()
     for (int i = 0; i < NUM_THREADS; i++)
     {
         pthread_cancel(array_threads[i]);
+        printf("--> Termino hilo slave %d\n", (i + 1));
     }
-    printf("\nHilos slaves finalizados\n");
+    printf("Hilos slaves finalizados\n");
+    for (int i = 0; i < NUM_SCK_THREAD; i++)
+    {
+        sem_post(&sem_msg[i]);
+    }
     for (int i = 0; i < NUM_THREADS_SIGNALS; i++)
     {
         pthread_cancel(array_threads_signals[i]);
+        printf("--> Termino hilo master %d\n", (i + 1));
     }
     printf("Hilos masters finalizados\n");
     for (int i = 0; i < NUM_SCK_THREAD; i++)
     {
         close(array_socks[i]);
+        printf("--> Cerro socket %d\n", (i + 1));
     }
     printf("Sockets cerrados\n");
     for (int i = 0; i < NUM; i++)
@@ -247,19 +199,13 @@ void terminte_program()
         close(shmid[i]);
     }
     printf("Bloques de memoria cerrados\n");
-    exit(1);
+    exit(EXIT_SUCCESS);
 }
 
 void create_signals_gyros(int all)
 {
     for (int i = 0; i < NUM_GYROS; i++)
     {
-        pthread_attr_t tattr;
-        struct sched_param s_param;
-        ret = pthread_attr_init(&tattr);
-        ret = pthread_attr_getschedparam(&tattr, &s_param);
-        s_param.sched_priority = newprio;
-        ret = pthread_attr_setschedparam(&tattr, &s_param);
         arg_gyros *arg = &array_gyros[i];
         arg->id = i;
         arg->men_gyro = param[i + 2];
@@ -269,9 +215,22 @@ void create_signals_gyros(int all)
 
         if (all == 1)
         {
+            pthread_attr_t tattr;
+            struct sched_param s_param;
+            pthread_attr_init(&tattr);
+            pthread_attr_getschedparam(&tattr, &s_param);
+            s_param.sched_priority = MASTER_PRIO;
+            pthread_attr_setschedparam(&tattr, &s_param);
             pthread_create(&array_threads_signals[i], &tattr, signal_gyro, arg);
         }
-        pthread_create(&array_threads[i], NULL, gyroscope_thread, arg);
+
+        pthread_attr_t tattr_slave;
+        struct sched_param s_param_slave;
+        pthread_attr_init(&tattr_slave);
+        pthread_attr_getschedparam(&tattr_slave, &s_param_slave);
+        s_param_slave.sched_priority = SLAVE_PRIO;
+        pthread_attr_setschedparam(&tattr_slave, &s_param_slave);
+        pthread_create(&array_threads[i], &tattr_slave, gyroscope_thread, arg);
     }
 }
 
@@ -304,21 +263,22 @@ void create_pe_thread()
 {
     pthread_attr_t tattr;
     struct sched_param s_param;
-    ret = pthread_attr_init(&tattr);
-    ret = pthread_attr_getschedparam(&tattr, &s_param);
-    s_param.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr, &s_param);
-    pthread_create(&array_threads[2], NULL, pricipal_engine_thread, NULL);
+    pthread_attr_init(&tattr);
+    pthread_attr_getschedparam(&tattr, &s_param);
+    s_param.sched_priority = MASTER_PRIO;
+    pthread_attr_setschedparam(&tattr, &s_param);
+    array_threads[2] = 0;
+    pthread_create(&array_threads[2], &tattr, pricipal_engine_thread, NULL);
 }
 
 void create_rest_thread()
 {
     pthread_attr_t tattr_rest;
     struct sched_param s_param_rest;
-    ret = pthread_attr_init(&tattr_rest);
-    ret = pthread_attr_getschedparam(&tattr_rest, &s_param_rest);
-    s_param_rest.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_rest, &s_param_rest);
+    pthread_attr_init(&tattr_rest);
+    pthread_attr_getschedparam(&tattr_rest, &s_param_rest);
+    s_param_rest.sched_priority = MASTER_PRIO;
+    pthread_attr_setschedparam(&tattr_rest, &s_param_rest);
     pthread_create(&array_threads_signals[2], &tattr_rest, signal_restart_landing, NULL);
 
     pthread_create(&array_threads[3], NULL, go_up_30m, NULL);
@@ -328,10 +288,10 @@ void create_explo_thread()
 {
     pthread_attr_t tattr_expl;
     struct sched_param s_param_expl;
-    ret = pthread_attr_init(&tattr_expl);
-    ret = pthread_attr_getschedparam(&tattr_expl, &s_param_expl);
-    s_param_expl.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_expl, &s_param_expl);
+    pthread_attr_init(&tattr_expl);
+    pthread_attr_getschedparam(&tattr_expl, &s_param_expl);
+    s_param_expl.sched_priority = MASTER_PRIO;
+    pthread_attr_setschedparam(&tattr_expl, &s_param_expl);
     pthread_create(&array_threads_signals[3], &tattr_expl, signal_explote_rocket, NULL);
 }
 
@@ -339,10 +299,10 @@ void create_land_thread()
 {
     pthread_attr_t tattr_land;
     struct sched_param s_param_land;
-    ret = pthread_attr_init(&tattr_land);
-    ret = pthread_attr_getschedparam(&tattr_land, &s_param_land);
-    s_param_land.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_land, &s_param_land);
+    pthread_attr_init(&tattr_land);
+    pthread_attr_getschedparam(&tattr_land, &s_param_land);
+    s_param_land.sched_priority = MASTER_PRIO;
+    pthread_attr_setschedparam(&tattr_land, &s_param_land);
     pthread_create(&array_threads_signals[4], &tattr_land, signal_landing_check, NULL);
 }
 
@@ -350,11 +310,11 @@ void create_signal_manual()
 {
     pthread_attr_t tattr_land;
     struct sched_param s_param_land;
-    ret = pthread_attr_init(&tattr_land);
-    ret = pthread_attr_getschedparam(&tattr_land, &s_param_land);
-    s_param_land.sched_priority = newprio;
-    ret = pthread_attr_setschedparam(&tattr_land, &s_param_land);
-    pthread_create(&array_threads_signals[4], &tattr_land, sig_handler_manual, NULL);
+    pthread_attr_init(&tattr_land);
+    pthread_attr_getschedparam(&tattr_land, &s_param_land);
+    s_param_land.sched_priority = MASTER_PRIO;
+    pthread_attr_setschedparam(&tattr_land, &s_param_land);
+    pthread_create(&array_threads_signals[5], &tattr_land, sig_handler_manual, NULL);
 }
 
 void terminate_event_1(int all)
@@ -364,9 +324,10 @@ void terminate_event_1(int all)
     if (all == 1)
     {
         pthread_cancel(array_threads_signals[0]);
+        close(array_socks[0]);
         pthread_cancel(array_threads_signals[1]);
+        close(array_socks[1]);
     }
-    
 }
 
 void terminate_event_3(int all)
@@ -376,14 +337,14 @@ void terminate_event_3(int all)
     {
         pthread_cancel(array_threads_signals[2]);
     }
-    
 }
 
 void manage_principal_engine(int force_restart)
 {
-    if (force_restart)
+    if (force_restart == 1)
     {
-        pthread_kill(array_threads[2], SIGTSTP);
+        //pthread_kill(array_threads[2], SIGTSTP);
+        pthread_cancel(array_threads[2]);
         princp_engine = 0;
         create_pe_thread();
         princp_engine = 1;
@@ -421,34 +382,36 @@ void sig_handler_main(int signo)
     if (signo == SIGINT)
     {
         terminte_program();
+        return;
     }
+    return;
 }
 
-int create_sck_sender()
+int create_sck_sender(int idx)
 {
-    int socketSD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socketSD <= 0)
+    int broadcastSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (broadcastSocket <= 0)
     {
-        printf("Error: Could not open socket.\n");
+        printf("No se pudo crear el socket\n");
         return -1;
     }
 
     // set socket options enable broadcast
     int broadcastEnable = 1;
-    int ret_create = setsockopt(socketSD, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+    int ret_create = setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
     if (ret_create)
     {
-        printf("Error: Could not open set socket to broadcast mode\n");
-        close(socketSD);
+        printf("No se pudo abrir el socket en el modo broadcast\n");
+        close(broadcastSocket);
         return -1;
     }
-    array_socks[c_sck++] = socketSD;
-    return socketSD;
+    array_socks[idx] = broadcastSocket;
+    return broadcastSocket;
 }
 
 void send_mesg(int sckfd, char *msg, int len_msg)
 {
-    
+
     sem_wait(&sem_sock);
     int numsec;
     for (numsec = 1; numsec <= MAXTRY; numsec <<= 1)
@@ -557,7 +520,7 @@ void *pricipal_engine_thread()
     {
         perror("Error in set Thread Cancellation\n");
     }
-    int sockfd = create_sck_sender();
+    int sockfd = create_sck_sender(6);
     char *msg = "Combustible: %d\n--> Motor principal: %s - potencia %s\n";
     char *state;
     char *potencia;
@@ -578,10 +541,9 @@ void *pricipal_engine_thread()
             sem_wait(&(sem_gs[i]));
         }
         sem_wait(&sem_gas);
-        
+
         if (CURRENT_ACTION == EVENT_3 ||
-            CURRENT_ACTION == EVENT_4
-        )
+            CURRENT_ACTION == EVENT_4)
         {
             potencia = "acelerando";
             gasoline -= 5;
@@ -591,7 +553,8 @@ void *pricipal_engine_thread()
             potencia = "desacelerando";
             gasoline -= 0.5;
         }
-        else {
+        else
+        {
             potencia = "normal";
             gasoline -= 1;
         }
@@ -600,9 +563,9 @@ void *pricipal_engine_thread()
         {
             sem_post(&(sem_gs[i]));
         }
-        sem_post(&sem_dist);
         sem_post(&sem_action);
-        
+        sem_post(&sem_dist);
+
         state = princp_engine ? "ON" : "OFF";
         int space = snprintf(NULL, 0, msg, gasoline, state, potencia);
         char *buffer = malloc(space);
@@ -630,9 +593,9 @@ void *go_up_30m()
     {
         printf(FAILURE_MSG, "SUBIR (30 m)", 2, core_id);
     }
-    int oldtype, rc;
+    int oldtype;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     pause();
     int time = 0;
     while (is_on)
@@ -669,9 +632,9 @@ void *go_up_explode()
     {
         printf(FAILURE_MSG, "ABORTAR (Gas 10)", 3, core_id);
     }
-    int oldtype, rc;
+    int oldtype;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
     while (is_on)
     {
         printf("sgskdkm\n");
@@ -699,6 +662,7 @@ void *signal_gyro(void *arg)
     arg_gyros *info = arg;
     const pthread_t pid = pthread_self();
     const int core_id = info->id % CPU_CORES;
+    sem_t sem_gyro = info->sem_gyro;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(core_id, &cpuset);
@@ -721,7 +685,7 @@ void *signal_gyro(void *arg)
     }
 
     // Configure the port and ip we want to send to
-    int sockfd = create_sck_sender();
+    int sockfd = create_sck_sender(info->id);
     char *msg = "Giroscopio %d: %d (%s)\n";
     char *state;
     while (is_on)
@@ -729,12 +693,12 @@ void *signal_gyro(void *arg)
         pthread_testcancel();
         state = "OFF";
         sem_wait(&sem_action);
+        sem_wait(&sem_gyro);
         if (
             CURRENT_ACTION == EVENT_1 &&
-            *(info->men_gyro)
-        )
+            *(info->men_gyro))
         {
-            sem_post(&sem_action);
+            //sem_post(&sem_action);
             state = "ON - iniciando correcciones";
             int res, err;
             if (pthread_kill(array_threads[info->id], SIGCONT) != 0)
@@ -746,6 +710,7 @@ void *signal_gyro(void *arg)
         int space = snprintf(NULL, 0, msg, info->id, *(info->men_gyro), state);
         char *buffer = malloc(space);
         snprintf(buffer, space, msg, info->id, *(info->men_gyro), state);
+        sem_post(&sem_gyro);
         send_mesg(sockfd, buffer, space);
         free(buffer);
         sem_wait(&sem_msg[info->id]);
@@ -775,7 +740,7 @@ void *signal_restart_landing()
     {
         perror("Error in set Thread Cancellation\n");
     }
-    int sockfd = create_sck_sender();
+    int sockfd = create_sck_sender(2);
     char *msg = "Reiniciando aterrizaje";
     char *msg_alt = "Aterrizaje en curso";
     while (is_on)
@@ -783,6 +748,10 @@ void *signal_restart_landing()
         pthread_testcancel();
         sem_wait(&sem_dist);
         sem_wait(&sem_action);
+        for (int i = 0; i < NUM_GYROS; i++)
+        {
+            sem_wait(&(sem_gs[i]));
+        }
         if (
             CURRENT_ACTION != EVENT_4 &&
             distance < 5 &&
@@ -790,6 +759,10 @@ void *signal_restart_landing()
         {
             sem_post(&sem_action);
             change_action(EVENT_3);
+            for (int i = 0; i < NUM_GYROS; i++)
+            {
+                sem_post(&(sem_gs[i]));
+            }
             sem_post(&sem_dist);
             terminate_event_1(0);
             manage_principal_engine(0);
@@ -800,6 +773,10 @@ void *signal_restart_landing()
         else
         {
             sem_post(&sem_action);
+            for (int i = 0; i < NUM_GYROS; i++)
+            {
+                sem_post(&(sem_gs[i]));
+            }
             sem_post(&sem_dist);
             send_mesg(sockfd, msg_alt, strlen(msg_alt) + 1);
             sem_wait(&sem_msg[2]);
@@ -823,17 +800,19 @@ void *signal_explote_rocket()
     {
         printf(SUCCESS_MSG, "SIGNAL (Gas 10)", 3, core_id);
     }
-    int oldtype, rc;
+    int oldtype;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
-    int sockfd = create_sck_sender();
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    int sockfd = create_sck_sender(3);
     char *msg = "Abortando aterrizaje";
     char *msg_alt = "Sin aborto de aterrizaje";
     while (is_on)
     {
         pthread_testcancel();
+        sem_wait(&sem_gas);
         if (gasoline < 10 || manual_explote)
         {
+            sem_post(&sem_gas);
             manual_explote = 0;
             //change_action(4);
             //manage_principal_engine(0);
@@ -842,11 +821,17 @@ void *signal_explote_rocket()
             //pthread_create(&array_threads[4], NULL, go_up_explode, NULL);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
-            printf("ROCKET HAS BEEN EXPLOTE!\n");
+            printf("El cohete ha explotado!\n");
+            sleep(INTERVAL);
             pthread_kill(main_id, SIGINT);
         }
+        else
+        {
+            sem_post(&sem_gas);
+        }
         sem_wait(&sem_action);
-        if(CURRENT_ACTION == EVENT_4){
+        if (CURRENT_ACTION == EVENT_4)
+        {
             sem_post(&sem_action);
             send_mesg(sockfd, msg, strlen(msg) + 1);
             sem_wait(&sem_msg[3]);
@@ -883,7 +868,7 @@ void *signal_landing_check()
     {
         perror("Error in set Thread Cancellation\n");
     }
-    int sockfd = create_sck_sender();
+    int sockfd = create_sck_sender(4);
     char *msg = "Distancia a tierra: %d %s\n";
     char *act;
     while (is_on)
@@ -892,16 +877,27 @@ void *signal_landing_check()
         sem_wait(&sem_dist);
         int dist = distance;
         sem_post(&sem_dist);
+        for (int i = 0; i < NUM_GYROS; i++)
+        {
+            sem_wait(&(sem_gs[i]));
+        }
+        act = "";
         if (dist <= 0 &&
             *gyros1 == 0 && *gyros2 == 0)
         {
             is_on = 0;
-            //terminate_event_3();
-            //pthread_cancel(array_threads_signals[3]);
-            //pthread_cancel(main_id);
+            for (int i = 0; i < NUM_GYROS; i++)
+            {
+                sem_post(&(sem_gs[i]));
+            }
+            act = "<Aterrizaje satisfactorio>";
+            int space = snprintf(NULL, 0, msg, dist, act);
+            char *buffer = malloc(space);
+            snprintf(buffer, space, msg, dist, act);
+            send_mesg(sockfd, buffer, space);
+            free(buffer);
             break;
         }
-        act = "";
         if (
             dist <= 1 &&
             (*gyros1 == 0 ||
@@ -913,7 +909,10 @@ void *signal_landing_check()
             //pthread_kill(array_threads[2], SIGTSTP);
             act = "- apagando propulsores";
         }
-
+        for (int i = 0; i < NUM_GYROS; i++)
+        {
+            sem_post(&(sem_gs[i]));
+        }
         int space = snprintf(NULL, 0, msg, dist, act);
         char *buffer = malloc(space);
         snprintf(buffer, space, msg, dist, act);
@@ -921,7 +920,8 @@ void *signal_landing_check()
         free(buffer);
         sem_wait(&sem_msg[4]);
     }
-    printf("SUCCESSFUL LANDING\n");
+    printf("Aterrizaje satisfactorio\n");
+    sleep(INTERVAL);
     pthread_kill(main_id, SIGINT);
 }
 
@@ -941,10 +941,10 @@ void *sig_handler_manual()
     {
         printf(SUCCESS_MSG, "SIGNAL (Alarm)", 6, core_id);
     }
-    int oldtype, rc;
+    int oldtype;
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
-    rc = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
-    int sockfd = create_sck_sender();
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldtype);
+    int sockfd = create_sck_sender(5);
     char *msg;
     char *msg_alt = "Sin alarmas";
     while (is_on)
@@ -956,29 +956,35 @@ void *sig_handler_manual()
             {
                 manage_principal_engine(1);
                 restart_thrusters();
-                msg = "Reiniciando todos los propulsores";
+                printf("*--------------------------*\n");
+                msg = "Reiniciando todos los propulsores\n";
                 send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 102)
             {
                 manage_principal_engine(1);
-                msg = "Reiniciando propulsor principal";
+                printf("*--------------------------*\n");
+                msg = "Reiniciando propulsor principal\n";
                 send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 103)
             {
                 restart_thrusters();
-                msg = "Reiniciando propulsores de orientación";
+                printf("*--------------------------*\n");
+                msg = "Reiniciando propulsores de orientación\n";
                 send_mesg(sockfd, msg, strlen(msg) + 1);
             }
             else if (*alarma == 104)
             {
                 //manual_explote = 1;
-                msg = "Iniciando secuencia de autodestrucción";
+                msg = "El cohete ha explotado!\n";
                 send_mesg(sockfd, msg, strlen(msg) + 1);
-                printf("ROCKET HAS BEEN EXPLOTE!\n");
+                printf("El cohete ha explotado!\n");
+                sleep(INTERVAL);
                 pthread_kill(main_id, SIGINT);
+                //terminte_program();
             }
+            *alarma = 0;
             last_alamra = *alarma;
         }
         else
