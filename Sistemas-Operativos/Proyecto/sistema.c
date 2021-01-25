@@ -357,8 +357,8 @@ void manage_principal_engine(int force_restart)
 
 void restart_thrusters()
 {
-    terminate_event_1(1);
-    create_signals_gyros(1);
+    terminate_event_1(0);
+    create_signals_gyros(0);
 }
 
 void sig_handler_threads(int signo)
